@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/server.js",
+    "server:dev": "nodemon server/server.js",
+    "seed": "node server/scripts/seedAdmin.js",
+    "seed:demo": "node server/scripts/seedDemo.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
