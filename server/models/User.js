@@ -37,10 +37,10 @@ const userSchema = new mongoose.Schema(
 );
 
 // FR-SEC-01: Hash password before save (10 salt rounds)
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+// Mongoose 9: async hooks don't receive `next`; just return/throw.
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 10);
-  next();
 });
 
 // Instance method for password comparison
