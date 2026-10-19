@@ -5,6 +5,7 @@ import {
   getEventById,
   createEvent,
   updateEvent,
+  deleteEvent,
 } from '../controllers/eventController.js';
 
 const router = Router();
@@ -19,5 +20,6 @@ router.get('/:id', getEventById);
 // Organizer or admin (ownership of the event is checked inside updateEvent)
 router.post('/', requireRole(['organizer', 'admin']), createEvent);
 router.put('/:id', requireRole(['organizer', 'admin']), updateEvent);
+router.delete('/:id', requireRole(['organizer', 'admin']), deleteEvent);
 
 export default router;
