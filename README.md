@@ -22,13 +22,24 @@ Use the **⚡ Instant Demo Login** buttons on the login page:
 
 ## Switch to Live Backend
 
-1. Edit `.env`:
-   ```env
-   VITE_USE_MOCK=false
-   VITE_API_URL=http://localhost:5000/api
-   ```
-2. Start your backend server
-3. `npm run dev`
+Needs Node 20+ and a MongoDB (local `mongod`, Docker, or Atlas).
+
+```bash
+npm install
+cp .env.example .env        # then edit .env (see below)
+npm run seed                # admin account only
+npm run seed:demo           # optional: demo users/events/registrations (dev only, idempotent)
+npm run server:dev          # API on http://localhost:5000
+npm run dev                 # UI on http://localhost:5173 (second terminal)
+```
+
+In `.env`: set `VITE_USE_MOCK=false`, point `MONGO_URI` at your database, and generate a `JWT_SECRET`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+Seeded accounts all use `Password123!` (admin: `admin@orgavents.edu`). Health check: `GET /api`.
 
 ## Project Structure
 
@@ -40,6 +51,7 @@ src/
 └── services/
     ├── api.js           # Dual-mode API client (Mock ↔ Live)
     └── mockBackend.js   # Full localStorage mock implementation
+server/              # Express + Mongoose API (config, middleware, models, controllers, routes, scripts)
 ```
 
 ## Backend Integration
