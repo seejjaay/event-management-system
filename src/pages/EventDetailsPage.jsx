@@ -505,7 +505,7 @@ export default function EventDetailsPage() {
                       </div>
                       <p className="text-xs text-emerald-800">
                         Registered on{' '}
-                        {new Date(userRegistration.createdAt).toLocaleDateString(undefined, {
+                        {new Date(userRegistration.registeredAt).toLocaleDateString(undefined, {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',

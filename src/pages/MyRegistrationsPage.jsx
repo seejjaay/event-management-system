@@ -198,8 +198,8 @@ export default function MyRegistrationsPage() {
             const isPast = eventDate ? isEventPast(eventDate) : false;
             const canCancel = !reg.checkedIn && !isPast;
 
-            const registrationDateStr = reg.createdAt
-              ? new Date(reg.createdAt).toLocaleDateString(undefined, {
+            const registrationDateStr = reg.registeredAt
+              ? new Date(reg.registeredAt).toLocaleDateString(undefined, {
                   month: 'short',
                   day: 'numeric',
                   year: 'numeric',
