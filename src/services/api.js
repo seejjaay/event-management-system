@@ -70,16 +70,16 @@ export async function apiRequest(endpoint, options = {}) {
     }
   }
 
-  // Intercept 401/403 mid-session (FR-AUTH-09)
+  // Intercept a dead session mid-session (FR-AUTH-09). Only the API's explicit auth codes
+  // count: a plain 401/403 (wrong current password, "organizers can't RSVP", ...) is an
+  // ordinary refusal and must not sign the user out.
   const isAuthEndpoint =
     endpoint.includes('/users/login') || endpoint.includes('/users/register');
-  if ((response.status === 401 || response.status === 403) && token && !isAuthEndpoint) {
-    if (typeof onSessionExpiredCallback === 'function') {
-      const reason =
-        response.status === 403
-          ? 'Your account has been deactivated or privileges revoked. Please contact an administrator.'
-          : 'Your session has expired. Please sign in again to continue.';
-      onSessionExpiredCallback(reason);
+  if (token && !isAuthEndpoint && typeof onSessionExpiredCallback === 'function') {
+    if (data.code === 'ACCOUNT_DEACTIVATED') {
+      onSessionExpiredCallback('Your account has been deactivated. Please contact an administrator.');
+    } else if (data.code === 'SESSION_EXPIRED') {
+      onSessionExpiredCallback('Your session has expired. Please sign in again to continue.');
     }
   }
 
@@ -380,15 +380,15 @@ export const adminAPI = {
       : apiRequest(`/admin/users${_qs(params)}`),
 
   /**
-   * POST /api/users/register  (admin creates user)
+   * POST /api/admin/users  (admin creates user with a role)
    * Body:    { name, email, password, role? }
    * Returns: { message, user }
-   * Note:    In live mode admin can pass role; in mock mode role always defaults to member unless changed via updateRole
+   * Auth:    admin
    */
   createUser: (userData) =>
     USE_MOCK
-      ? mock.mockRegister(userData)
-      : apiRequest('/users/register', {
+      ? mock.mockAdminCreateUser(userData)
+      : apiRequest('/admin/users', {
           method: 'POST',
           body: JSON.stringify(userData),
         }),

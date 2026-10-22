@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Sparkles, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { InlineBanner } from '../components/ui/StateViews';
+import Logo from '../components/ui/Logo';
+import { checkEmail, normalizeEmail, LIMITS } from '../utils/validators';
 import { resetMockDB } from '../services/mockBackend.js';
 
 // Detect mock mode
 const USE_MOCK =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_USE_MOCK === 'true';
+// Quick sign-in is a local-dev convenience: needs mock mode AND a dev server (Vite sets DEV false in builds)
+const SHOW_QUICK_LOGIN = USE_MOCK && import.meta.env.DEV;
 
 export default function LoginPage() {
   const { login, isAuthenticated, authNotice, clearAuthNotice } = useAuth();
@@ -30,16 +34,13 @@ export default function LoginPage() {
 
   const validate = () => {
     const errors = {};
-    if (!email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      errors.email = 'Please enter a valid email address';
-    }
+    const emailErr = checkEmail(email);
+    if (emailErr) errors.email = emailErr;
 
     if (!password) {
       errors.password = 'Password is required';
-    } else if (password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
+    } else if (password.length < LIMITS.PASSWORD_MIN) {
+      errors.password = `Password must be at least ${LIMITS.PASSWORD_MIN} characters`;
     }
 
     setValidationErrors(errors);
@@ -55,7 +56,7 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      await login(email.trim(), password);
+      await login(normalizeEmail(email), password);
       navigate('/calendar');
     } catch (err) {
       if (err.status === 401) {
@@ -122,9 +123,7 @@ export default function LoginPage() {
       <div className="max-w-md w-full mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
         {/* Brand Header */}
         <div className="flex flex-col items-center mb-6">
-          <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white mb-3 shadow-sm">
-            <Sparkles className="w-5 h-5 text-white" />
-          </div>
+          <Logo size={44} className="mb-3 shadow-sm rounded-xl" />
           <h1 className="text-xl font-bold tracking-tight text-slate-900">OrgaVents</h1>
           {USE_MOCK && (
             <span className="mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 tracking-wide uppercase">
@@ -167,9 +166,9 @@ export default function LoginPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleLoginSubmit} className="space-y-4">
+        <form onSubmit={handleLoginSubmit} noValidate className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="login-email">
               Email
             </label>
             <input
@@ -177,6 +176,8 @@ export default function LoginPage() {
               type="email"
               required
               value={email}
+              maxLength={LIMITS.EMAIL_MAX}
+              autoComplete="email"
               onChange={(e) => {
                 setEmail(e.target.value);
                 if (validationErrors.email) setValidationErrors((prev) => ({ ...prev, email: null }));
@@ -185,12 +186,12 @@ export default function LoginPage() {
               className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none text-sm transition-all text-slate-900 placeholder:text-slate-400"
             />
             {validationErrors.email && (
-              <p className="text-xs text-red-600 mt-1">{validationErrors.email}</p>
+              <p role="alert" className="text-xs text-red-600 mt-1">{validationErrors.email}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="login-password">
               Password
             </label>
             <div className="relative flex items-center">
@@ -199,6 +200,8 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
+                maxLength={LIMITS.PASSWORD_MAX_BYTES}
+                autoComplete="current-password"
                 onChange={(e) => {
                   setPassword(e.target.value);
                   if (validationErrors.password) setValidationErrors((prev) => ({ ...prev, password: null }));
@@ -209,14 +212,14 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 text-slate-400 hover:text-slate-600 p-1"
-                aria-label="Toggle password visibility"
+                className="absolute right-1 text-slate-400 hover:text-slate-600 p-2.5"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             {validationErrors.password && (
-              <p className="text-xs text-red-600 mt-1">{validationErrors.password}</p>
+              <p role="alert" className="text-xs text-red-600 mt-1">{validationErrors.password}</p>
             )}
           </div>
 
@@ -230,10 +233,11 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Quick Login — instant one-click role logins for demo/testing */}
+        {/* Quick Login — local mock-mode dev builds only; never in a deployed or live-backend build */}
+        {SHOW_QUICK_LOGIN && (
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
           <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block mb-2">
-            {USE_MOCK ? '⚡ Instant Demo Login' : 'Quick Fill'}
+            ⚡ Instant Demo Login
           </span>
           <div className="flex items-center justify-center gap-2">
             {[
@@ -246,17 +250,7 @@ export default function LoginPage() {
                 id={`quick-login-${role}`}
                 type="button"
                 disabled={isLoading}
-                onClick={() => USE_MOCK ? handleQuickLogin(role) : (() => {
-                  const creds = {
-                    admin: ['admin@orgavents.edu', 'Password123!'],
-                    organizer: ['organizer@campus.edu', 'Password123!'],
-                    member: ['member@campus.edu', 'Password123!'],
-                  };
-                  setEmail(creds[role][0]);
-                  setPassword(creds[role][1]);
-                  setValidationErrors({});
-                  setErrorMessage('');
-                })()}
+                onClick={() => handleQuickLogin(role)}
                 className={`px-3 py-1 rounded-lg border text-xs font-medium transition-all disabled:opacity-50 ${color} ${
                   quickLoginRole === role ? 'opacity-60 cursor-wait' : ''
                 }`}
@@ -266,6 +260,7 @@ export default function LoginPage() {
             ))}
           </div>
         </div>
+        )}
       </div>
 
       {/* Reset Demo Data button — bottom corner, only shown in mock mode */}

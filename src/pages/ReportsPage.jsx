@@ -5,12 +5,14 @@ import { useAuth } from '../context/AuthContext';
 import { eventsAPI, reportsAPI, registrationsAPI } from '../services/api';
 import { formatEventTime, formatEventDateTime } from '../utils/dateUtils';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
 
 export default function ReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialEventId = searchParams.get('eventId');
 
   const { user, role } = useAuth();
+  const toast = useToast();
 
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState(initialEventId || '');
@@ -86,10 +88,7 @@ export default function ReportsPage() {
     setFeedbackNotice(null);
     try {
       const filename = await reportsAPI.exportRegistrants(selectedEventId, format);
-      setFeedbackNotice({
-        type: 'success',
-        message: `Exported ${filename || format.toUpperCase()}.`,
-      });
+      toast.success(`Saved ${filename || format.toUpperCase()}.`, { title: 'Successfully exported' });
     } catch (err) {
       setFeedbackNotice({
         type: 'error',
@@ -346,6 +345,7 @@ export default function ReportsPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search registrant by name or email..."
+ maxLength={100}
                   className="w-full h-10 pl-9 pr-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-slate-900 transition-all"
                 />
               </div>

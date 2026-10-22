@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-const httpError = (status, message) => Object.assign(new Error(message), { status });
+// `code` lets the client tell "your session is dead" apart from an ordinary 401/403 refusal
+const httpError = (status, message, code) => Object.assign(new Error(message), { status, ...(code && { code }) });
 
 // Reads "Authorization: Bearer <token>", verifies it, and attaches the live user.
 export async function verifyToken(req, res, next) {
@@ -16,14 +17,14 @@ export async function verifyToken(req, res, next) {
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
       // Expired, tampered, or garbage token
-      throw httpError(401, 'Session expired. Please log in again.');
+      throw httpError(401, 'Session expired. Please log in again.', 'SESSION_EXPIRED');
     }
 
     // Always re-read the user so role changes and deactivation apply immediately (FR-AUTH-09)
     const user = await User.findById(payload.id);
-    if (!user) throw httpError(401, 'Session expired. Please log in again.');
+    if (!user) throw httpError(401, 'Session expired. Please log in again.', 'SESSION_EXPIRED');
     if (!user.isActive) {
-      throw httpError(403, 'Account deactivated. Contact an administrator.');
+      throw httpError(403, 'Account deactivated. Contact an administrator.', 'ACCOUNT_DEACTIVATED');
     }
 
     req.user = user;

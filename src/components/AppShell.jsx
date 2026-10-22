@@ -9,13 +9,13 @@ import {
   FolderKanban,
   User,
   LogOut,
-  Sparkles,
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from './ui/ConfirmModal';
+import Logo from './ui/Logo';
 
 export default function AppShell({ children }) {
   const { user, role, logout } = useAuth();
@@ -126,6 +126,12 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen bg-[#F5F7F9] text-slate-900 flex flex-col antialiased">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[110] focus:px-4 focus:py-2 focus:rounded-xl focus:bg-slate-900 focus:text-white focus:text-sm focus:font-semibold"
+      >
+        Skip to main content
+      </a>
       {/* DESKTOP SIDEBAR (md: and up - w-64 expanded vs w-20 collapsed) */}
       <aside
         className={`hidden md:flex fixed left-0 top-0 h-screen bg-white border-r border-slate-100 flex-col justify-between z-50 transition-all duration-300 ease-in-out ${
@@ -140,12 +146,7 @@ export default function AppShell({ children }) {
             } px-1`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div
-                className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm shrink-0"
-                title="OrgaVents"
-              >
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
+              <Logo size={36} className="shrink-0" />
               {!isCollapsed && (
                 <span className="text-xl font-bold tracking-tight text-slate-900 truncate">
                   OrgaVents
@@ -294,9 +295,7 @@ export default function AppShell({ children }) {
       {/* MOBILE TOP BAR (< md) */}
       <header className="md:hidden sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-white">
-            <Sparkles className="w-3.5 h-3.5 text-white" />
-          </div>
+          <Logo size={28} />
           <span className="text-base font-bold tracking-tight text-slate-900">OrgaVents</span>
         </div>
         <div className="flex items-center gap-2">
@@ -320,7 +319,9 @@ export default function AppShell({ children }) {
 
       {/* MAIN CONTENT VIEWPORT */}
       <main
-        className={`flex-1 w-full transition-all duration-300 ease-in-out min-h-screen bg-[#F5F7F9] flex flex-col pb-20 md:pb-8 ${
+        id="main-content"
+        tabIndex={-1}
+        className={`flex-1 w-full outline-none transition-all duration-300 ease-in-out min-h-screen bg-[#F5F7F9] flex flex-col pb-20 md:pb-8 ${
           isCollapsed ? 'md:pl-20' : 'md:pl-64'
         }`}
       >

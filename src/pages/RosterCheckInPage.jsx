@@ -4,11 +4,13 @@ import { ArrowLeft, Search, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { eventsAPI, registrationsAPI } from '../services/api';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
 
 export default function RosterCheckInPage() {
   const { id: eventId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
 
   const [event, setEvent] = useState(null);
   const [roster, setRoster] = useState([]);
@@ -58,6 +60,10 @@ export default function RosterCheckInPage() {
 
     try {
       await registrationsAPI.checkIn(regId);
+      const attendee = previousRoster.find((r) => r._id === regId)?.user?.name;
+      toast.success(attendee ? `${attendee} is checked in.` : 'Attendee checked in.', {
+        title: 'Successfully checked in',
+      });
     } catch (err) {
       setRoster(previousRoster);
       setFeedbackNotice({
@@ -132,6 +138,7 @@ export default function RosterCheckInPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search attendee..."
+ maxLength={100}
             className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
           />
         </div>

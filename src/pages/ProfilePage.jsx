@@ -3,9 +3,13 @@ import { User, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import { InlineBanner, LoadingSkeleton } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
+import PasswordChecklist from '../components/ui/PasswordChecklist';
+import { checkName, checkEmail, checkPassword, collapseSpaces, normalizeEmail, LIMITS } from '../utils/validators';
 
 export default function ProfilePage() {
   const { user, role, refreshUser } = useAuth();
+  const toast = useToast();
 
   // Profile fields
   const [name, setName] = useState('');
@@ -21,9 +25,7 @@ export default function ProfilePage() {
   // Status states
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
-  const [profileSuccessMessage, setProfileSuccessMessage] = useState('');
   const [profileErrorMessage, setProfileErrorMessage] = useState('');
-  const [passwordSuccessMessage, setPasswordSuccessMessage] = useState('');
   const [passwordErrorMessage, setPasswordErrorMessage] = useState('');
 
   useEffect(() => {
@@ -33,29 +35,28 @@ export default function ProfilePage() {
     }
   }, [user]);
 
+  const isProfileDirty =
+    !user || collapseSpaces(name) !== (user.name || '') || normalizeEmail(email) !== (user.email || '').toLowerCase();
+
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
+    if (!isProfileDirty) return;
     setProfileErrorMessage('');
-    setProfileSuccessMessage('');
 
-    if (!name.trim()) {
-      setProfileErrorMessage('Name cannot be empty.');
-      return;
-    }
-
-    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setProfileErrorMessage('Please provide a valid email address.');
+    const profileErr = checkName(name) || checkEmail(email);
+    if (profileErr) {
+      setProfileErrorMessage(profileErr);
       return;
     }
 
     setIsUpdatingProfile(true);
     try {
       await authAPI.updateUserProfile(user._id, {
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
+        name: collapseSpaces(name),
+        email: normalizeEmail(email),
       });
       await refreshUser();
-      setProfileSuccessMessage('Profile details updated.');
+      toast.success('Your profile details were updated.', { title: 'Changes saved' });
     } catch (err) {
       if (err.status === 409) {
         setProfileErrorMessage('This email is already in use by another account.');
@@ -70,15 +71,20 @@ export default function ProfilePage() {
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     setPasswordErrorMessage('');
-    setPasswordSuccessMessage('');
 
     if (!currentPassword) {
       setPasswordErrorMessage('Current password is required.');
       return;
     }
 
-    if (!newPassword || newPassword.length < 8) {
-      setPasswordErrorMessage('New password must be at least 8 characters long.');
+    const newPasswordErr = checkPassword(newPassword);
+    if (newPasswordErr) {
+      setPasswordErrorMessage(`New password: ${newPasswordErr.charAt(0).toLowerCase()}${newPasswordErr.slice(1)}.`);
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setPasswordErrorMessage('New password must be different from the current one.');
       return;
     }
 
@@ -97,7 +103,7 @@ export default function ProfilePage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordSuccessMessage('Password updated successfully.');
+      toast.success('Your password was updated.', { title: 'Changes saved' });
     } catch (err) {
       if (err.status === 401) {
         setPasswordErrorMessage('Incorrect current password.');
@@ -141,13 +147,6 @@ export default function ProfilePage() {
             Profile Details
           </h2>
 
-          {profileSuccessMessage && (
-            <InlineBanner
-              type="success"
-              message={profileSuccessMessage}
-              onDismiss={() => setProfileSuccessMessage('')}
-            />
-          )}
           {profileErrorMessage && (
             <InlineBanner
               type="error"
@@ -156,28 +155,32 @@ export default function ProfilePage() {
             />
           )}
 
-          <form onSubmit={handleProfileSubmit} className="space-y-4">
+          <form onSubmit={handleProfileSubmit} noValidate className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="profile-1">
                 Full Name
               </label>
-              <input
+              <input id="profile-1"
                 type="text"
                 required
                 value={name}
+                maxLength={LIMITS.NAME_MAX}
+                autoComplete="name"
                 onChange={(e) => setName(e.target.value)}
                 className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="profile-2">
                 Email Address
               </label>
-              <input
+              <input id="profile-2"
                 type="email"
                 required
                 value={email}
+                maxLength={LIMITS.EMAIL_MAX}
+                autoComplete="email"
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
               />
@@ -185,8 +188,9 @@ export default function ProfilePage() {
 
             <button
               type="submit"
-              disabled={isUpdatingProfile}
-              className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+              disabled={isUpdatingProfile || !isProfileDirty}
+              title={!isProfileDirty ? 'No changes to save' : undefined}
+              className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isUpdatingProfile && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>Save Changes</span>
@@ -200,13 +204,6 @@ export default function ProfilePage() {
             Change Password
           </h2>
 
-          {passwordSuccessMessage && (
-            <InlineBanner
-              type="success"
-              message={passwordSuccessMessage}
-              onDismiss={() => setPasswordSuccessMessage('')}
-            />
-          )}
           {passwordErrorMessage && (
             <InlineBanner
               type="error"
@@ -215,16 +212,18 @@ export default function ProfilePage() {
             />
           )}
 
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+          <form onSubmit={handlePasswordSubmit} noValidate className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="profile-3">
                 Current Password
               </label>
               <div className="relative flex items-center">
-                <input
+                <input id="profile-3"
                   type={showCurrentPassword ? 'text' : 'password'}
                   required
                   value={currentPassword}
+                  maxLength={LIMITS.PASSWORD_MAX_BYTES}
+                  autoComplete="current-password"
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Enter current password"
                   className="w-full h-11 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
@@ -232,7 +231,8 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className="absolute right-3 text-slate-400 hover:text-slate-600"
+                  aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                  className="absolute right-1 text-slate-400 hover:text-slate-600 p-2.5"
                 >
                   {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -240,36 +240,42 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="profile-4">
                 New Password
               </label>
               <div className="relative flex items-center">
-                <input
+                <input id="profile-4"
                   type={showNewPassword ? 'text' : 'password'}
                   required
                   value={newPassword}
+                  maxLength={LIMITS.PASSWORD_MAX_BYTES}
+                  autoComplete="new-password"
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="At least 8 characters"
+                  placeholder="Create a strong password"
                   className="w-full h-11 pl-4 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
                 />
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 text-slate-400 hover:text-slate-600"
+                  aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                  className="absolute right-1 text-slate-400 hover:text-slate-600 p-2.5"
                 >
                   {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <PasswordChecklist value={newPassword} />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="profile-5">
                 Confirm New Password
               </label>
-              <input
+              <input id="profile-5"
                 type={showNewPassword ? 'text' : 'password'}
                 required
                 value={confirmPassword}
+                maxLength={LIMITS.PASSWORD_MAX_BYTES}
+                autoComplete="new-password"
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repeat new password"
                 className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"

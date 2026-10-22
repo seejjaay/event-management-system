@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { checkName, checkEmail, checkPassword, normalizeEmail, collapseSpaces } from '../utils/validators.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,7 +14,6 @@ const isObjectId = (v) => typeof v === 'string' && /^[a-f\d]{24}$/i.test(v);
 const isAdmin = (user) => user.role === 'admin';
 const sameId = (a, b) => String(a?._id ?? a) === String(b?._id ?? b);
 
-const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const ROLES = ['admin', 'organizer', 'member'];
 
 /** Never leaks the password hash. */
@@ -31,29 +31,6 @@ const signToken = (user) =>
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 
-// Field validators: return an error string, or null when valid
-const checkName = (v) => {
-  if (typeof v !== 'string' || !v.trim()) return 'Full name is required';
-  if (v.trim().length > 100) return 'Name cannot exceed 100 characters';
-  return null;
-};
-
-const checkEmail = (v) => {
-  if (typeof v !== 'string' || !v.trim()) return 'Email is required';
-  if (!EMAIL_RE.test(v.trim())) return 'Please enter a valid email';
-  return null;
-};
-
-const checkPassword = (v) => {
-  if (typeof v !== 'string' || !v) return 'Password is required';
-  if (v.length < 8) return 'Password must be at least 8 characters';
-  // bcrypt silently ignores everything past 72 bytes
-  if (Buffer.byteLength(v) > 72) return 'Password cannot exceed 72 bytes';
-  return null;
-};
-
-const normalizeEmail = (v) => v.trim().toLowerCase();
-
 /** True when `user` is the only active admin left (FR-USR-10 lockout guard). */
 const isLastActiveAdmin = async (user) =>
   user.role === 'admin' &&
@@ -63,37 +40,60 @@ const isLastActiveAdmin = async (user) =>
 // ---------------------------------------------------------------------------
 // POST /api/users/register                     (public)   FR-AUTH-02
 // ---------------------------------------------------------------------------
+/** Validates the body, enforces unique email and creates the account with the given role. */
+const createAccount = async (body, role) => {
+  const { name, email, password } = body;
+
+  const errors = {};
+  const nameErr = checkName(name);
+  const emailErr = checkEmail(email);
+  const passwordErr = checkPassword(password);
+  if (nameErr) errors.name = nameErr;
+  if (emailErr) errors.email = emailErr;
+  if (passwordErr) errors.password = passwordErr;
+  if (Object.keys(errors).length) throw httpError(400, 'Validation failed.', errors);
+
+  const normalizedEmail = normalizeEmail(email);
+  if (await User.exists({ email: normalizedEmail })) {
+    throw httpError(409, 'An account with this email already exists.');
+  }
+
+  try {
+    return await User.create({
+      name: collapseSpaces(name),
+      email: normalizedEmail,
+      password,          // hashed by the model's pre-save hook
+      role,
+    });
+  } catch (err) {
+    if (err.code === 11000) throw httpError(409, 'An account with this email already exists.');
+    throw err;
+  }
+};
+
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    // FR-AUTH-02: public sign-up is always member, whatever the body says
+    const user = await createAccount(req.body, 'member');
+    res.status(201).json({
+      message: 'Account created successfully.',
+      user: toPublicUser(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
-    const errors = {};
-    const nameErr = checkName(name);
-    const emailErr = checkEmail(email);
-    const passwordErr = checkPassword(password);
-    if (nameErr) errors.name = nameErr;
-    if (emailErr) errors.email = emailErr;
-    if (passwordErr) errors.password = passwordErr;
-    if (Object.keys(errors).length) throw httpError(400, 'Validation failed.', errors);
-
-    const normalizedEmail = normalizeEmail(email);
-    if (await User.exists({ email: normalizedEmail })) {
-      throw httpError(409, 'An account with this email already exists.');
+// ---------------------------------------------------------------------------
+// POST /api/admin/users                        (admin)    admin creates an account with a role
+// ---------------------------------------------------------------------------
+export const adminCreateUser = async (req, res, next) => {
+  try {
+    const role = req.body.role ?? 'member';
+    if (!ROLES.includes(role)) {
+      throw httpError(400, 'Validation failed.', { role: 'role must be one of: admin, organizer, member' });
     }
-
-    let user;
-    try {
-      user = await User.create({
-        name: name.trim(),
-        email: normalizedEmail,
-        password,          // hashed by the model's pre-save hook
-        role: 'member',    // FR-AUTH-02: always member, whatever the body says
-      });
-    } catch (err) {
-      if (err.code === 11000) throw httpError(409, 'An account with this email already exists.');
-      throw err;
-    }
-
+    const user = await createAccount(req.body, role);
     res.status(201).json({
       message: 'Account created successfully.',
       user: toPublicUser(user),
@@ -172,10 +172,10 @@ export const updateProfile = async (req, res, next) => {
     const admin = isAdmin(req.user);
     if (!admin && !sameId(userId, req.user._id)) throw httpError(403, 'Access denied.');
 
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select('+password');
     if (!user) throw httpError(404, 'User not found.');
 
-    const { name, email, password, isActive } = req.body;
+    const { name, email, password, currentPassword, isActive } = req.body;
 
     if (isActive !== undefined && !admin) {
       throw httpError(403, 'Only an administrator can change account status.');
@@ -197,6 +197,22 @@ export const updateProfile = async (req, res, next) => {
       const err = checkPassword(password);
       if (err) errors.password = err;
     }
+    if (Object.keys(errors).length) throw httpError(400, 'Validation failed.', errors);
+
+    // Changing your own password requires proving you know the current one
+    // (an admin resetting someone else's password does not).
+    if (password !== undefined && sameId(userId, req.user._id)) {
+      if (typeof currentPassword !== 'string' || !currentPassword) {
+        throw httpError(400, 'Validation failed.', { currentPassword: 'Current password is required' });
+      }
+      if (!(await user.comparePassword(currentPassword))) {
+        throw httpError(401, 'Current password is incorrect.');
+      }
+      if (currentPassword === password) {
+        throw httpError(400, 'Validation failed.', { password: 'New password must be different from the current one' });
+      }
+    }
+
     if (isActive !== undefined && typeof isActive !== 'boolean') {
       errors.isActive = 'isActive must be true or false';
     }
@@ -211,7 +227,7 @@ export const updateProfile = async (req, res, next) => {
       throw httpError(409, 'Cannot deactivate the last active administrator.');
     }
 
-    if (name !== undefined) user.name = name.trim();
+    if (name !== undefined) user.name = collapseSpaces(name);
     if (newEmail) user.email = newEmail;
     if (password !== undefined) user.password = password; // re-hashed by the pre-save hook
     if (isActive !== undefined) user.isActive = isActive;

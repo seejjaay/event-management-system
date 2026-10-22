@@ -19,6 +19,8 @@
  *  NFR-SEC-06  – Login rate limiter (5 attempts / 15 min) in memory
  */
 
+import * as V from '../utils/validators.js';
+
 // ─── Storage key constants ────────────────────────────────────────────────────
 const KEYS = {
   users: 'ov_mock_users',
@@ -501,23 +503,41 @@ export async function mockLogin(email, password) {
  * Note: role is ALWAYS set to 'member' (FR-AUTH-02)
  */
 export async function mockRegister({ name, email, password }) {
+  return createMockAccount({ name, email, password }, 'member');
+}
+
+/**
+ * POST /api/admin/users  (admin only) — like register, but honours `role`.
+ */
+export async function mockAdminCreateUser({ name, email, password, role = 'member' }) {
+  requireRole('admin');
+  if (!['admin', 'organizer', 'member'].includes(role)) {
+    throw apiError('Validation failed.', 400, { role: 'Must be admin, organizer, or member.' });
+  }
+  return createMockAccount({ name, email, password }, role);
+}
+
+async function createMockAccount({ name, email, password }, role) {
   await delay();
   const errors = {};
-  if (!name?.trim()) errors.name = 'Full name is required.';
-  if (!email?.trim()) errors.email = 'Email is required.';
-  if (!password || password.length < 8) errors.password = 'Password must be at least 8 characters.';
+  const nameErr = V.checkName(name);
+  const emailErr = V.checkEmail(email);
+  const passwordErr = V.checkPassword(password);
+  if (nameErr) errors.name = nameErr;
+  if (emailErr) errors.email = emailErr;
+  if (passwordErr) errors.password = passwordErr;
   if (Object.keys(errors).length) throw apiError('Validation failed.', 400, errors);
 
   const users = getUsers();
-  if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) {
+  if (users.find((u) => u.email.toLowerCase() === V.normalizeEmail(email))) {
     throw apiError('An account with this email already exists.', 409);
   }
   const newUser = {
     _id: generateId(),
-    name: name.trim(),
-    email: email.trim().toLowerCase(),
+    name: V.collapseSpaces(name),
+    email: V.normalizeEmail(email),
     password: hashPassword(password),
-    role: 'member', // FR-AUTH-02: always member
+    role,
     isActive: true,
     createdAt: now(),
   };
@@ -554,13 +574,43 @@ export async function mockUpdateUserProfile(userId, updates) {
     throw apiError('Forbidden.', 403);
   }
   const user = users[idx];
-  if (updates.name !== undefined) user.name = updates.name.trim();
-  if (updates.email !== undefined) {
-    const conflict = users.find((u) => u.email.toLowerCase() === updates.email.toLowerCase() && u._id !== userId);
-    if (conflict) throw apiError('Email already in use.', 409);
-    user.email = updates.email.trim().toLowerCase();
+
+  const errors = {};
+  if (updates.name !== undefined) {
+    const err = V.checkName(updates.name);
+    if (err) errors.name = err;
   }
-  if (updates.password) user.password = hashPassword(updates.password);
+  if (updates.email !== undefined) {
+    const err = V.checkEmail(updates.email);
+    if (err) errors.email = err;
+  }
+  if (updates.password !== undefined) {
+    const err = V.checkPassword(updates.password);
+    if (err) errors.password = err;
+  }
+  if (Object.keys(errors).length) throw apiError('Validation failed.', 400, errors);
+
+  // Changing your own password requires the current one
+  if (updates.password !== undefined && me._id === userId) {
+    if (!updates.currentPassword) {
+      throw apiError('Validation failed.', 400, { currentPassword: 'Current password is required' });
+    }
+    if (!checkPassword(updates.currentPassword, user.password)) {
+      throw apiError('Current password is incorrect.', 401);
+    }
+    if (updates.currentPassword === updates.password) {
+      throw apiError('Validation failed.', 400, { password: 'New password must be different from the current one' });
+    }
+  }
+
+  if (updates.name !== undefined) user.name = V.collapseSpaces(updates.name);
+  if (updates.email !== undefined) {
+    const email = V.normalizeEmail(updates.email);
+    const conflict = users.find((u) => u.email.toLowerCase() === email && u._id !== userId);
+    if (conflict) throw apiError('Email already in use.', 409);
+    user.email = email;
+  }
+  if (updates.password !== undefined) user.password = hashPassword(updates.password);
   if (me.role === 'admin' && updates.isActive !== undefined) user.isActive = Boolean(updates.isActive);
   users[idx] = user;
   saveUsers(users);
@@ -624,19 +674,23 @@ export async function mockCreateEvent(eventData) {
   await delay();
   const me = requireRole('organizer', 'admin');
   const errors = {};
-  if (!eventData.title?.trim()) errors.title = 'Title is required.';
-  if (!eventData.date) errors.date = 'Date is required.';
-  if (!eventData.venue?.trim()) errors.venue = 'Venue is required.';
-  if (!eventData.capacity || eventData.capacity < 1) errors.capacity = 'Capacity must be at least 1.';
+  const checks = {
+    title: V.checkEventTitle(eventData.title),
+    description: V.checkDescription(eventData.description),
+    date: V.checkEventDate(eventData.date, { requireFuture: true }),
+    venue: V.checkVenue(eventData.venue),
+    capacity: V.checkCapacity(eventData.capacity),
+  };
+  for (const [field, err] of Object.entries(checks)) if (err) errors[field] = err;
   if (Object.keys(errors).length) throw apiError('Validation failed.', 400, errors);
 
   const events = getEvents();
   const newEvent = {
     _id: generateId(),
-    title: eventData.title.trim(),
-    description: eventData.description?.trim() || '',
+    title: V.collapseSpaces(eventData.title),
+    description: eventData.description.trim(),
     date: eventData.date,
-    venue: eventData.venue.trim(),
+    venue: V.collapseSpaces(eventData.venue),
     capacity: Number(eventData.capacity),
     registeredCount: 0,
     organizer: me._id,
@@ -663,6 +717,17 @@ export async function mockUpdateEvent(id, eventData) {
   const isOwner = (event.organizer?._id || event.organizer) === me._id;
   if (me.role !== 'admin' && !isOwner) throw apiError('Forbidden. You do not own this event.', 403);
 
+  const errors = {};
+  const checks = {
+    title: eventData.title !== undefined && V.checkEventTitle(eventData.title),
+    description: eventData.description !== undefined && V.checkDescription(eventData.description),
+    date: eventData.date !== undefined && V.checkEventDate(eventData.date),
+    venue: eventData.venue !== undefined && V.checkVenue(eventData.venue),
+    capacity: eventData.capacity !== undefined && V.checkCapacity(eventData.capacity),
+  };
+  for (const [field, err] of Object.entries(checks)) if (err) errors[field] = err;
+  if (Object.keys(errors).length) throw apiError('Validation failed.', 400, errors);
+
   // FR-EVT-09: capacity must remain >= registeredCount
   const newCapacity = eventData.capacity !== undefined ? Number(eventData.capacity) : event.capacity;
   if (newCapacity < event.registeredCount) {
@@ -674,10 +739,10 @@ export async function mockUpdateEvent(id, eventData) {
 
   const updated = {
     ...event,
-    title: eventData.title?.trim() ?? event.title,
-    description: eventData.description?.trim() ?? event.description,
+    title: eventData.title !== undefined ? V.collapseSpaces(eventData.title) : event.title,
+    description: eventData.description !== undefined ? eventData.description.trim() : event.description,
     date: eventData.date ?? event.date,
-    venue: eventData.venue?.trim() ?? event.venue,
+    venue: eventData.venue !== undefined ? V.collapseSpaces(eventData.venue) : event.venue,
     capacity: newCapacity,
   };
   events[idx] = updated;
@@ -717,7 +782,7 @@ export async function mockDeleteEvent(id) {
  */
 export async function mockRsvp(eventId) {
   await delay();
-  const me = requireAuth();
+  const me = requireRole('member', 'admin'); // matches the API: organizers can't RSVP
   const events = getEvents();
   const eventIdx = events.findIndex((e) => e._id === eventId);
   if (eventIdx === -1) throw apiError('Event not found.', 404);

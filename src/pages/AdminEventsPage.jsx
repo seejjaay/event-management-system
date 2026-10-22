@@ -21,9 +21,11 @@ import {
 } from '../utils/dateUtils';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
 
 export default function AdminEventsPage() {
   const { user } = useAuth();
+  const toast = useToast();
 
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,10 +114,7 @@ export default function AdminEventsPage() {
 
     try {
       await adminAPI.deleteEvent(deletingEvent._id);
-      setFeedbackNotice({
-        type: 'success',
-        message: `Event "${deletingEvent.title}" was deleted.`,
-      });
+      toast.success(`"${deletingEvent.title}" was deleted.`, { title: 'Event deleted' });
       setDeletingEvent(null);
       await fetchAllEvents();
     } catch (err) {
@@ -133,6 +132,7 @@ export default function AdminEventsPage() {
     try {
       setIsExportingCsv(true);
       await reportsAPI.exportRegistrants(deletingEvent._id, 'csv');
+      toast.success(`Registrants for "${deletingEvent.title}" exported as CSV.`, { title: 'Successfully exported' });
     } catch (err) {
       setFeedbackNotice({
         type: 'error',
@@ -170,6 +170,7 @@ export default function AdminEventsPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by title, venue, or organizer..."
+ maxLength={100}
             className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
           />
         </div>

@@ -1,5 +1,13 @@
 import Event from '../models/Event.js';
 import Registration from '../models/Registration.js';
+import {
+  checkEventTitle,
+  checkDescription,
+  checkEventDate,
+  checkVenue,
+  checkCapacity,
+  collapseSpaces,
+} from '../utils/validators.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,37 +38,34 @@ function parseEventInput(body = {}, { partial = false } = {}) {
   const sent = (k) => body[k] !== undefined;
 
   if (!partial || sent('title')) {
-    const title = typeof body.title === 'string' ? body.title.trim() : '';
-    if (!title) errors.title = 'Event title is required';
-    else if (title.length > 200) errors.title = 'Title cannot exceed 200 characters';
-    else values.title = title;
+    const err = checkEventTitle(body.title);
+    if (err) errors.title = err;
+    else values.title = collapseSpaces(body.title);
   }
 
-  if (sent('description')) {
-    const description = typeof body.description === 'string' ? body.description.trim() : null;
-    if (description === null) errors.description = 'Description must be text';
-    else if (description.length > 2000) errors.description = 'Description cannot exceed 2000 characters';
-    else values.description = description;
+  if (!partial || sent('description')) {
+    const err = checkDescription(body.description);
+    if (err) errors.description = err;
+    else values.description = body.description.trim();
   }
 
   if (!partial || sent('date')) {
-    const date = body.date ? new Date(body.date) : null;
-    if (!date || Number.isNaN(date.getTime())) errors.date = 'A valid event date is required';
-    else values.date = date;
+    // Creating requires a future date; editing may keep an event's existing (possibly past) date
+    const err = checkEventDate(body.date, { requireFuture: !partial });
+    if (err) errors.date = err;
+    else values.date = new Date(body.date);
   }
 
   if (!partial || sent('venue')) {
-    const venue = typeof body.venue === 'string' ? body.venue.trim() : '';
-    if (!venue) errors.venue = 'Venue is required';
-    else values.venue = venue;
+    const err = checkVenue(body.venue);
+    if (err) errors.venue = err;
+    else values.venue = collapseSpaces(body.venue);
   }
 
   if (!partial || sent('capacity')) {
-    const raw = body.capacity;
-    const capacity =
-      (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) ? Number(raw) : NaN;
-    if (!Number.isInteger(capacity) || capacity < 1) errors.capacity = 'Capacity must be a whole number of at least 1';
-    else values.capacity = capacity;
+    const err = checkCapacity(body.capacity);
+    if (err) errors.capacity = err;
+    else values.capacity = Number(body.capacity);
   }
 
   return { values, errors };

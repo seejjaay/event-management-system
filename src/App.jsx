@@ -1,26 +1,66 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import { ToastProvider } from './components/ui/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
+import { LoadingSkeleton } from './components/ui/StateViews';
 
-// Pages
+// Pages (login is eager as the entry point; the rest are split per route)
 import LoginPage from './pages/LoginPage';
-import SignUpPage from './pages/SignUpPage';
-import ProfilePage from './pages/ProfilePage';
-import CalendarPage from './pages/CalendarPage';
-import MyRegistrationsPage from './pages/MyRegistrationsPage';
-import OrganizerDashboardPage from './pages/OrganizerDashboardPage';
-import ReportsPage from './pages/ReportsPage';
-import EventFormPage from './pages/EventFormPage';
-import RosterCheckInPage from './pages/RosterCheckInPage';
-import AdminUsersPage from './pages/AdminUsersPage';
-import AdminEventsPage from './pages/AdminEventsPage';
-import EventDetailsPage from './pages/EventDetailsPage';
+const SignUpPage = lazy(() => import('./pages/SignUpPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const MyRegistrationsPage = lazy(() => import('./pages/MyRegistrationsPage'));
+const OrganizerDashboardPage = lazy(() => import('./pages/OrganizerDashboardPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const EventFormPage = lazy(() => import('./pages/EventFormPage'));
+const RosterCheckInPage = lazy(() => import('./pages/RosterCheckInPage'));
+const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
+const AdminEventsPage = lazy(() => import('./pages/AdminEventsPage'));
+const EventDetailsPage = lazy(() => import('./pages/EventDetailsPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+const ROUTE_TITLES = [
+  ['/login', 'Sign in'],
+  ['/signup', 'Create account'],
+  ['/calendar', 'Calendar'],
+  ['/events/new', 'New event'],
+  ['/events/:id/edit', 'Edit event'],
+  ['/events/:id/roster', 'Check-in roster'],
+  ['/events/:id', 'Event details'],
+  ['/profile', 'Profile'],
+  ['/my-registrations', 'My registrations'],
+  ['/organizer', 'Organizer dashboard'],
+  ['/reports', 'Reports'],
+  ['/admin/users', 'Users'],
+  ['/admin/events', 'All events'],
+];
+
+/** Keeps the tab/history title in step with the route (screen readers announce it on navigation). */
+function TitleManager() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const match = ROUTE_TITLES.find(([pattern]) => matchPath(pattern, pathname));
+    document.title = match ? `${match[1]} · OrgaVents` : 'Page not found · OrgaVents';
+  }, [pathname]);
+  return null;
+}
 
 function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
+      <ToastProvider>
       <BrowserRouter>
+        <TitleManager />
+        <Suspense
+          fallback={
+            <div className="min-h-screen bg-[#F5F7F9] p-8 max-w-5xl mx-auto">
+              <LoadingSkeleton variant="card" count={2} />
+            </div>
+          }
+        >
         <Routes>
           {/* Public Auth Routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -128,10 +168,13 @@ function App() {
 
           {/* Root and Fallback redirection */}
           <Route path="/" element={<Navigate to="/calendar" replace />} />
-          <Route path="*" element={<Navigate to="/calendar" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

@@ -489,7 +489,11 @@ export default function EventDetailsPage() {
             ) : (
               /* For Members */
               <div className="pt-2 border-t border-slate-100 space-y-3">
-                {userRegistration ? (
+                {role === 'organizer' ? (
+                  <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                    Organizer accounts can't RSVP to events. Use a member account to register.
+                  </p>
+                ) : userRegistration ? (
                   /* Already registered confirmation box */
                   <div className="space-y-3">
                     <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-2">

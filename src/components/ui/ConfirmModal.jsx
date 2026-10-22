@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useId } from 'react';
 import { AlertTriangle, AlertCircle, X, Loader2 } from 'lucide-react';
+import useDialog from '../../hooks/useDialog';
 
 export default function ConfirmModal({
   isOpen,
@@ -13,22 +14,18 @@ export default function ConfirmModal({
   onConfirm,
   onClose,
 }) {
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen && !isLoading) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isLoading, onClose]);
+  const titleId = useId();
+  const dialogRef = useDialog({ isOpen, onClose, canClose: !isLoading });
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       {/* Soft blur backdrop */}
@@ -52,7 +49,7 @@ export default function ConfirmModal({
                 <AlertCircle className="w-5 h-5" />
               )}
             </div>
-            <h3 className="text-lg font-bold tracking-tight text-slate-900">
+            <h3 id={titleId} className="text-lg font-bold tracking-tight text-slate-900">
               {title}
             </h3>
           </div>
@@ -61,7 +58,7 @@ export default function ConfirmModal({
             onClick={onClose}
             disabled={isLoading}
             aria-label="Close"
-            className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
+            className="p-2 -m-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -82,6 +79,7 @@ export default function ConfirmModal({
             type="button"
             onClick={onClose}
             disabled={isLoading}
+            data-autofocus
             className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all"
           >
             {cancelText}

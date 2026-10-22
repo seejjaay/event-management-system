@@ -153,7 +153,11 @@ export default function EventDetailsDrawer({
 
         {/* Drawer Footer Action */}
         <div className="p-6 border-t border-slate-100 bg-white">
-          {isRegistered ? (
+          {role === 'organizer' ? (
+            <p className="text-xs text-slate-400 text-center leading-relaxed">
+              Organizer accounts can't RSVP to events. Use a member account to register.
+            </p>
+          ) : isRegistered ? (
             <button
               type="button"
               disabled={isRsvpLoading || isCancellationDisabled}

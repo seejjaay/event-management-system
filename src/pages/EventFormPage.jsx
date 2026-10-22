@@ -5,12 +5,23 @@ import { useAuth } from '../context/AuthContext';
 import { eventsAPI } from '../services/api';
 import { formatEventDate, formatEventTime } from '../utils/dateUtils';
 import { InlineBanner, LoadingSkeleton } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
+import {
+  checkEventTitle,
+  checkVenue,
+  checkDescription,
+  checkEventDate,
+  checkCapacity,
+  collapseSpaces,
+  LIMITS,
+} from '../utils/validators';
 
 export default function EventFormPage() {
   const { id } = useParams();
   const isEditMode = Boolean(id);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -20,6 +31,7 @@ export default function EventFormPage() {
   const [description, setDescription] = useState('');
 
   const [initialEvent, setInitialEvent] = useState(null);
+  const [baseline, setBaseline] = useState(null); // field values as loaded, for edit-mode dirty check
   const [fieldErrors, setFieldErrors] = useState({});
   const [generalError, setGeneralError] = useState('');
   const [isLoading, setIsLoading] = useState(isEditMode);
@@ -31,18 +43,26 @@ export default function EventFormPage() {
         try {
           setIsLoading(true);
           const data = await eventsAPI.getById(id);
+          let localISOTime = '';
+          if (data.date) {
+            const d = new Date(data.date);
+            const offset = d.getTimezoneOffset() * 60000;
+            localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+          }
+
           setInitialEvent(data);
           setTitle(data.title || '');
           setVenue(data.venue || '');
           setCapacity(data.capacity || 40);
           setDescription(data.description || '');
-
-          if (data.date) {
-            const d = new Date(data.date);
-            const offset = d.getTimezoneOffset() * 60000;
-            const localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
-            setDate(localISOTime);
-          }
+          setDate(localISOTime);
+          setBaseline({
+            title: data.title || '',
+            venue: data.venue || '',
+            capacity: String(data.capacity || 40),
+            description: data.description || '',
+            date: localISOTime,
+          });
         } catch (err) {
           setGeneralError(err.message || 'Failed to load event details.');
         } finally {
@@ -59,44 +79,33 @@ export default function EventFormPage() {
     }
   }, [id, isEditMode]);
 
+  const isDirty =
+    !isEditMode ||
+    !baseline ||
+    title !== baseline.title ||
+    venue !== baseline.venue ||
+    String(capacity) !== baseline.capacity ||
+    description !== baseline.description ||
+    date !== baseline.date;
+
   const validateForm = () => {
     const errors = {};
 
-    if (!title.trim()) {
-      errors.title = 'Title is required';
-    } else if (title.trim().length > 150) {
-      errors.title = 'Title cannot exceed 150 characters';
+    const titleErr = checkEventTitle(title);
+    const venueErr = checkVenue(venue);
+    const descriptionErr = checkDescription(description);
+    // Editing may keep an event's existing date, so only new events must be in the future
+    const dateErr = checkEventDate(date, { requireFuture: !isEditMode });
+    let capacityErr = checkCapacity(capacity);
+    if (!capacityErr && isEditMode && initialEvent && parseInt(capacity, 10) < (initialEvent.registeredCount || 0)) {
+      capacityErr = `Cannot reduce capacity below registered count (${initialEvent.registeredCount})`;
     }
 
-    if (!venue.trim()) {
-      errors.venue = 'Venue is required';
-    } else if (venue.trim().length > 200) {
-      errors.venue = 'Venue cannot exceed 200 characters';
-    }
-
-    if (!description.trim()) {
-      errors.description = 'Description is required';
-    } else if (description.trim().length > 5000) {
-      errors.description = 'Description cannot exceed 5000 characters';
-    }
-
-    if (!date) {
-      errors.date = 'Date and start time are required';
-    } else {
-      const selectedDate = new Date(date);
-      if (isNaN(selectedDate.getTime())) {
-        errors.date = 'Invalid date format';
-      } else if (!isEditMode && selectedDate <= new Date()) {
-        errors.date = 'Event date must be in the future';
-      }
-    }
-
-    const capNum = parseInt(capacity, 10);
-    if (isNaN(capNum) || capNum < 1) {
-      errors.capacity = 'Capacity must be at least 1';
-    } else if (isEditMode && initialEvent && capNum < (initialEvent.registeredCount || 0)) {
-      errors.capacity = `Cannot reduce capacity below registered count (${initialEvent.registeredCount})`;
-    }
+    if (titleErr) errors.title = titleErr;
+    if (venueErr) errors.venue = venueErr;
+    if (descriptionErr) errors.description = descriptionErr;
+    if (dateErr) errors.date = dateErr;
+    if (capacityErr) errors.capacity = capacityErr;
 
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -106,13 +115,13 @@ export default function EventFormPage() {
     e.preventDefault();
     setGeneralError('');
 
-    if (!validateForm()) return;
+    if (!isDirty || !validateForm()) return;
 
     setIsSubmitting(true);
     try {
       const payload = {
-        title: title.trim(),
-        venue: venue.trim(),
+        title: collapseSpaces(title),
+        venue: collapseSpaces(venue),
         description: description.trim(),
         capacity: parseInt(capacity, 10),
         date: new Date(date).toISOString(),
@@ -120,8 +129,10 @@ export default function EventFormPage() {
 
       if (isEditMode) {
         await eventsAPI.update(id, payload);
+        toast.success(`"${payload.title}" was updated.`, { title: 'Changes saved' });
       } else {
         await eventsAPI.create(payload);
+        toast.success(`"${payload.title}" is now on the calendar.`, { title: 'Event added' });
       }
 
       navigate('/organizer');
@@ -181,20 +192,20 @@ export default function EventFormPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Form Card (lg:col-span-7) */}
         <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(15,23,42,0.04)] p-6 sm:p-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-slate-700" htmlFor="event-form-1">
                   Title
                 </label>
                 <span className={`text-[11px] ${title.length > 150 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
                   {title.length} / 150
                 </span>
               </div>
-              <input
+              <input id="event-form-1"
                 type="text"
                 required
-                maxLength={150}
+                maxLength={LIMITS.TITLE_MAX}
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
@@ -204,18 +215,19 @@ export default function EventFormPage() {
                 className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400"
               />
               {fieldErrors.title && (
-                <p className="text-xs text-red-600 mt-1">{fieldErrors.title}</p>
+                <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.title}</p>
               )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="event-form-2">
                   Date & Time
                 </label>
-                <input
+                <input id="event-form-2"
                   type="datetime-local"
                   required
+                  min={isEditMode ? undefined : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                   value={date}
                   onChange={(e) => {
                     setDate(e.target.value);
@@ -224,19 +236,26 @@ export default function EventFormPage() {
                   className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
                 />
                 {fieldErrors.date && (
-                  <p className="text-xs text-red-600 mt-1">{fieldErrors.date}</p>
+                  <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.date}</p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="event-form-3">
                   Capacity
                 </label>
-                <input
+                <input id="event-form-3"
                   type="number"
+                  inputMode="numeric"
                   min="1"
+                  max={LIMITS.CAPACITY_MAX}
+                  step="1"
                   required
                   value={capacity}
+                  onKeyDown={(e) => {
+                    // whole numbers only: block exponent, sign and decimal point
+                    if (['e', 'E', '+', '-', '.', ','].includes(e.key)) e.preventDefault();
+                  }}
                   onChange={(e) => {
                     setCapacity(e.target.value);
                     if (fieldErrors.capacity) setFieldErrors((prev) => ({ ...prev, capacity: null }));
@@ -249,24 +268,24 @@ export default function EventFormPage() {
                   </p>
                 )}
                 {fieldErrors.capacity && (
-                  <p className="text-xs text-red-600 mt-1">{fieldErrors.capacity}</p>
+                  <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.capacity}</p>
                 )}
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-slate-700" htmlFor="event-form-4">
                   Venue
                 </label>
                 <span className={`text-[11px] ${venue.length > 200 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
                   {venue.length} / 200
                 </span>
               </div>
-              <input
+              <input id="event-form-4"
                 type="text"
                 required
-                maxLength={200}
+                maxLength={LIMITS.VENUE_MAX}
                 value={venue}
                 onChange={(e) => {
                   setVenue(e.target.value);
@@ -276,24 +295,24 @@ export default function EventFormPage() {
                 className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400"
               />
               {fieldErrors.venue && (
-                <p className="text-xs text-red-600 mt-1">{fieldErrors.venue}</p>
+                <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.venue}</p>
               )}
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label className="block text-xs font-semibold text-slate-700" htmlFor="event-description">
                   Description
                 </label>
-                <span className={`text-[11px] ${description.length > 5000 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-                  {description.length} / 5000
+                <span className={`text-[11px] ${description.length > LIMITS.DESCRIPTION_MAX ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+                  {description.length} / {LIMITS.DESCRIPTION_MAX}
                 </span>
               </div>
               <textarea
                 id="event-description"
                 rows={5}
                 required
-                maxLength={5000}
+                maxLength={LIMITS.DESCRIPTION_MAX}
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value);
@@ -303,7 +322,7 @@ export default function EventFormPage() {
                 className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400 resize-y"
               />
               {fieldErrors.description && (
-                <p className="text-xs text-red-600 mt-1">{fieldErrors.description}</p>
+                <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.description}</p>
               )}
             </div>
 
@@ -316,8 +335,9 @@ export default function EventFormPage() {
               </Link>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-all active:scale-[0.99] disabled:opacity-50"
+                disabled={isSubmitting || !isDirty}
+                title={!isDirty ? 'No changes to save' : undefined}
+                className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>{isEditMode ? 'Save Changes' : 'Create Event'}</span>

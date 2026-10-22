@@ -1,0 +1,29 @@
+import React from 'react';
+
+/**
+ * OrgaVents mark — an "O" ring (organize) with calendar binder tabs on top
+ * and a four-point spark (the event) at its centre.
+ * Keep in sync with public/favicon.svg.
+ */
+export default function Logo({ size = 40, className = '' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="none"
+      role="img"
+      aria-label="OrgaVents"
+      className={className}
+    >
+      <rect width="48" height="48" rx="12" fill="#0f172a" />
+      <circle cx="24" cy="26" r="11" stroke="#ffffff" strokeWidth="4" />
+      <rect x="17" y="9" width="3.5" height="8" rx="1.75" fill="#ffffff" />
+      <rect x="27.5" y="9" width="3.5" height="8" rx="1.75" fill="#ffffff" />
+      <path
+        d="M24 19.5 L25.9 24.1 L30.5 26 L25.9 27.9 L24 32.5 L22.1 27.9 L17.5 26 L22.1 24.1 Z"
+        fill="#34d399"
+      />
+    </svg>
+  );
+}

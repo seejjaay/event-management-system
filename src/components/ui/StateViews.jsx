@@ -166,7 +166,7 @@ export function InlineBanner({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss banner"
-          className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors"
+          className="p-2 -m-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors"
         >
           <X className="w-4 h-4" />
         </button>

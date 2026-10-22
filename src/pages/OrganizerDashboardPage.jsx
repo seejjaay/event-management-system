@@ -23,9 +23,11 @@ import {
 } from '../utils/dateUtils';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
+import { useToast } from '../components/ui/Toast';
 
 export default function OrganizerDashboardPage() {
   const { user, role } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
 
   const [events, setEvents] = useState([]);
@@ -116,10 +118,7 @@ export default function OrganizerDashboardPage() {
     setFeedbackNotice(null);
     try {
       await eventsAPI.delete(deletingEvent._id);
-      setFeedbackNotice({
-        type: 'success',
-        message: `Event "${deletingEvent.title}" was deleted.`,
-      });
+      toast.success(`"${deletingEvent.title}" was deleted.`, { title: 'Event deleted' });
       setDeletingEvent(null);
       await loadOrganizerEvents();
     } catch (err) {
@@ -137,6 +136,7 @@ export default function OrganizerDashboardPage() {
     try {
       setIsExportingCsv(true);
       await reportsAPI.exportRegistrants(deletingEvent._id, 'csv');
+      toast.success(`Registrants for "${deletingEvent.title}" exported as CSV.`, { title: 'Successfully exported' });
     } catch (err) {
       setFeedbackNotice({
         type: 'error',
@@ -276,6 +276,7 @@ export default function OrganizerDashboardPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search my events by title or venue..."
+ maxLength={100}
               className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
             />
           </div>

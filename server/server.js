@@ -20,7 +20,7 @@ app.use(cors({
   credentials: true,
   exposedHeaders: ['Content-Disposition'],  // lets the UI read the CSV filename
 }));
-app.use(express.json());             // 2. parse the body
+app.use(express.json({ limit: '50kb' })); // 2. parse the body (small cap: no endpoint needs more)
 app.use(sanitize);                   // 3. then clean it, before any route
 
 app.get('/api', (req, res) => res.json({ status: 'ok' }));   // health check
