@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft,
   Calendar,
   Clock,
   MapPin,
@@ -22,6 +21,7 @@ import { eventsAPI, registrationsAPI, reportsAPI, adminAPI } from '../services/a
 import {
   formatEventDate,
   formatEventTime,
+  formatEventTimeRange,
   isEventPast,
   isEventFull,
   getEventState,
@@ -235,7 +235,7 @@ export default function EventDetailsPage() {
     year: 'numeric',
   });
 
-  const timeString = formatEventTime(event.date);
+  const timeString = formatEventTimeRange(event.date, event.endDate);
 
   const canCancelRegistration = userRegistration && !userRegistration.checkedIn && !eventPast;
 
@@ -251,17 +251,7 @@ export default function EventDetailsPage() {
 
       {/* 1. TOP NAVIGATION BAR */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        {/* Left: Back button */}
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-50 text-xs font-semibold shadow-sm transition-all self-start"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
-        </button>
-
-        {/* Right: Quick action pill buttons for Organizer Owner / Admin */}
+        {/* Quick action pill buttons for Organizer Owner / Admin */}
         {canManage && (
           <div className="flex items-center gap-2 flex-wrap">
             <Link

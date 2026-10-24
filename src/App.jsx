@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ToastProvider } from './components/ui/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -8,18 +9,47 @@ import { LoadingSkeleton } from './components/ui/StateViews';
 
 // Pages (login is eager as the entry point; the rest are split per route)
 import LoginPage from './pages/LoginPage';
-const SignUpPage = lazy(() => import('./pages/SignUpPage'));
-const ProfilePage = lazy(() => import('./pages/ProfilePage'));
-const CalendarPage = lazy(() => import('./pages/CalendarPage'));
-const MyRegistrationsPage = lazy(() => import('./pages/MyRegistrationsPage'));
-const OrganizerDashboardPage = lazy(() => import('./pages/OrganizerDashboardPage'));
-const ReportsPage = lazy(() => import('./pages/ReportsPage'));
-const EventFormPage = lazy(() => import('./pages/EventFormPage'));
-const RosterCheckInPage = lazy(() => import('./pages/RosterCheckInPage'));
-const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
-const AdminEventsPage = lazy(() => import('./pages/AdminEventsPage'));
-const EventDetailsPage = lazy(() => import('./pages/EventDetailsPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const pageLoaders = {
+  SignUpPage: () => import('./pages/SignUpPage'),
+  ProfilePage: () => import('./pages/ProfilePage'),
+  CalendarPage: () => import('./pages/CalendarPage'),
+  MyRegistrationsPage: () => import('./pages/MyRegistrationsPage'),
+  OrganizerDashboardPage: () => import('./pages/OrganizerDashboardPage'),
+  ReportsPage: () => import('./pages/ReportsPage'),
+  EventFormPage: () => import('./pages/EventFormPage'),
+  RosterCheckInPage: () => import('./pages/RosterCheckInPage'),
+  AdminUsersPage: () => import('./pages/AdminUsersPage'),
+  AdminEventsPage: () => import('./pages/AdminEventsPage'),
+  AdminVenuesPage: () => import('./pages/AdminVenuesPage'),
+  EventDetailsPage: () => import('./pages/EventDetailsPage'),
+  NotFoundPage: () => import('./pages/NotFoundPage'),
+};
+const SignUpPage = lazy(pageLoaders.SignUpPage);
+const ProfilePage = lazy(pageLoaders.ProfilePage);
+const CalendarPage = lazy(pageLoaders.CalendarPage);
+const MyRegistrationsPage = lazy(pageLoaders.MyRegistrationsPage);
+const OrganizerDashboardPage = lazy(pageLoaders.OrganizerDashboardPage);
+const ReportsPage = lazy(pageLoaders.ReportsPage);
+const EventFormPage = lazy(pageLoaders.EventFormPage);
+const RosterCheckInPage = lazy(pageLoaders.RosterCheckInPage);
+const AdminUsersPage = lazy(pageLoaders.AdminUsersPage);
+const AdminEventsPage = lazy(pageLoaders.AdminEventsPage);
+const AdminVenuesPage = lazy(pageLoaders.AdminVenuesPage);
+const EventDetailsPage = lazy(pageLoaders.EventDetailsPage);
+const NotFoundPage = lazy(pageLoaders.NotFoundPage);
+
+/** Fetch every page's code in the background once the app is idle, so first visits open instantly. */
+function usePrefetchPages() {
+  useEffect(() => {
+    const prefetch = () => Object.values(pageLoaders).forEach((load) => load().catch(() => {}));
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(prefetch, { timeout: 4000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const t = setTimeout(prefetch, 2000);
+    return () => clearTimeout(t);
+  }, []);
+}
 
 const ROUTE_TITLES = [
   ['/login', 'Sign in'],
@@ -35,6 +65,7 @@ const ROUTE_TITLES = [
   ['/reports', 'Reports'],
   ['/admin/users', 'Users'],
   ['/admin/events', 'All events'],
+  ['/admin/venues', 'Venues'],
 ];
 
 /** Keeps the tab/history title in step with the route (screen readers announce it on navigation). */
@@ -48,15 +79,18 @@ function TitleManager() {
 }
 
 function App() {
+  usePrefetchPages();
+
   return (
     <ErrorBoundary>
+    <ThemeProvider>
     <AuthProvider>
       <ToastProvider>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true }}>
         <TitleManager />
         <Suspense
           fallback={
-            <div className="min-h-screen bg-[#F5F7F9] p-8 max-w-5xl mx-auto">
+            <div className="min-h-screen bg-canvas p-8 max-w-5xl mx-auto">
               <LoadingSkeleton variant="card" count={2} />
             </div>
           }
@@ -166,6 +200,15 @@ function App() {
             }
           />
 
+          <Route
+            path="/admin/venues"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminVenuesPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Root and Fallback redirection */}
           <Route path="/" element={<Navigate to="/calendar" replace />} />
           <Route path="*" element={<NotFoundPage />} />
@@ -174,6 +217,7 @@ function App() {
       </BrowserRouter>
       </ToastProvider>
     </AuthProvider>
+    </ThemeProvider>
     </ErrorBoundary>
   );
 }

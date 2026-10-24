@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Search, CheckCircle2, Loader2 } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { Search, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { eventsAPI, registrationsAPI } from '../services/api';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
@@ -8,7 +8,6 @@ import { useToast } from '../components/ui/Toast';
 
 export default function RosterCheckInPage() {
   const { id: eventId } = useParams();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -112,13 +111,6 @@ export default function RosterCheckInPage() {
       {/* Top Header Row: Back link + Event Title + Live pill */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <Link
-            to="/organizer"
-            className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors shrink-0 shadow-sm"
-            aria-label="Back to organizer dashboard"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 truncate">
             {event?.title || 'Event Roster'}
           </h1>

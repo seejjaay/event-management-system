@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, MapPin, Users, Loader2 } from 'lucide-react';
-import { formatEventDate, formatEventTime, getEventState } from '../../utils/dateUtils';
+import { formatEventDate, formatEventTime, formatEventTimeRange, getEventState } from '../../utils/dateUtils';
 import ConfirmModal from '../ui/ConfirmModal';
 
 export default function EventDetailsDrawer({
@@ -69,7 +69,7 @@ export default function EventDetailsDrawer({
     <>
       {/* Universal Backdrop */}
       <div
-        className={`fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 transition-opacity duration-200 cursor-pointer ${
+        className={`fixed inset-0 bg-black/40 backdrop-blur-sm z-50 transition-opacity duration-200 cursor-pointer ${
           isMounted && isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -112,7 +112,7 @@ export default function EventDetailsDrawer({
             <div className="flex items-center gap-3 text-slate-700">
               <CalendarIcon className="w-4 h-4 text-slate-400 shrink-0" />
               <span className="text-sm font-medium">
-                {formatEventDate(currentEvent.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTime(currentEvent.date)}
+                {formatEventDate(currentEvent.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTimeRange(currentEvent.date, currentEvent.endDate)}
               </span>
             </div>
             <div className="flex items-center gap-3 text-slate-700">

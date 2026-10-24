@@ -1,3 +1,53 @@
+import defaultColors from 'tailwindcss/colors';
+import plugin from 'tailwindcss/plugin';
+
+/**
+ * Theming: the slate scale, white, canvas and the accent shades the app uses are CSS
+ * variables ("R G B" channels, so opacity modifiers like bg-white/90 keep working).
+ * Light values are the original palette; dark values are generated here and emitted
+ * under `.dark` by the plugin at the bottom. Components keep using the plain
+ * slate, white and emerald utility classes and flip automatically.
+ */
+const LIGHT_SLATE = {
+  950: '#0b1c30', 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569',
+  500: '#64748b', 400: '#94a3b8', 300: '#cbd5e1', 200: '#e2e8f0', 100: '#f1f5f9', 50: '#f8fafc',
+};
+const DARK_SLATE = {
+  950: '#f8fafc', 900: '#f1f5f9', 800: '#dbe3ee', 700: '#c3cddc', 600: '#a9b6ca',
+  500: '#94a3b8', 400: '#7c8aa5', 300: '#3b4a68', 200: '#2a3850', 100: '#1f2b42', 50: '#182235',
+};
+const LIGHT_SURFACE = { white: '#ffffff', canvas: '#f5f7f9' };
+const DARK_SURFACE = { white: '#111a2b', canvas: '#0a101c' };
+
+// Accent hues: dark shade s takes the light value of its mirror shade (50<->950, 100<->900, ...)
+// except 500/600, which stay mid-tone so white-on-fill buttons keep their contrast.
+const ACCENT_HUES = ['emerald', 'amber', 'red', 'indigo'];
+const ACCENT_SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const DARK_SHADE_SOURCE = { 50: 950, 100: 900, 200: 800, 300: 700, 400: 600, 500: 400, 600: 500, 700: 300, 800: 200, 900: 100, 950: 50 };
+
+const channels = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+};
+const themeVar = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
+const accentColors = Object.fromEntries(
+  ACCENT_HUES.map((hue) => [hue, Object.fromEntries(ACCENT_SHADES.map((s) => [s, themeVar(`${hue}-${s}`)]))])
+);
+
+const lightVars = {};
+const darkVars = {};
+for (const [s, hex] of Object.entries(LIGHT_SLATE)) lightVars[`--c-slate-${s}`] = channels(hex);
+for (const [s, hex] of Object.entries(DARK_SLATE)) darkVars[`--c-slate-${s}`] = channels(hex);
+for (const [k, hex] of Object.entries(LIGHT_SURFACE)) lightVars[`--c-${k}`] = channels(hex);
+for (const [k, hex] of Object.entries(DARK_SURFACE)) darkVars[`--c-${k}`] = channels(hex);
+for (const hue of ACCENT_HUES) {
+  for (const s of ACCENT_SHADES) {
+    lightVars[`--c-${hue}-${s}`] = channels(defaultColors[hue][s]);
+    darkVars[`--c-${hue}-${s}`] = channels(defaultColors[hue][DARK_SHADE_SOURCE[s]]);
+  }
+}
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
@@ -66,19 +116,11 @@ export default {
         hairline: '#e2e8f0',
         'hairline-subtle': '#f1f5f9',
         'hairline-hover': '#cbd5e1',
-        slate: {
-          950: '#0b1c30',
-          900: '#0f172a',
-          800: '#1e293b',
-          700: '#334155',
-          600: '#475569',
-          500: '#64748b',
-          400: '#94a3b8',
-          300: '#cbd5e1',
-          200: '#e2e8f0',
-          100: '#f1f5f9',
-          50: '#f8fafc',
-        },
+        slate: Object.fromEntries(Object.keys(LIGHT_SLATE).map((s) => [s, themeVar(`slate-${s}`)])),
+        ...accentColors,
+        white: themeVar('white'),
+        canvas: themeVar('canvas'),
+        'white-fixed': '#ffffff', // stays white in both themes (text on coloured fills)
       },
       borderRadius: {
         DEFAULT: '0.25rem', // 4px
@@ -144,5 +186,9 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addBase }) => {
+      addBase({ ':root': lightVars, '.dark': { ...darkVars, 'color-scheme': 'dark' } });
+    }),
+  ],
 };

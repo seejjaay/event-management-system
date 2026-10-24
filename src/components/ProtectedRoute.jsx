@@ -13,7 +13,7 @@ export default function ProtectedRoute({ children, allowedRoles = null }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+      <div className="min-h-screen bg-canvas flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <LoadingSkeleton variant="card" count={2} />
         </div>

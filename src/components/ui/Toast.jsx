@@ -4,10 +4,10 @@ import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from 'lucide-react'
 const ToastContext = createContext(null);
 
 const VARIANTS = {
-  success: { icon: CheckCircle2, iconColor: 'text-emerald-500', bar: 'bg-emerald-500' },
-  error: { icon: AlertTriangle, iconColor: 'text-red-500', bar: 'bg-red-500' },
-  warning: { icon: AlertCircle, iconColor: 'text-amber-500', bar: 'bg-amber-500' },
-  info: { icon: Info, iconColor: 'text-slate-500', bar: 'bg-slate-400' },
+  success: { icon: CheckCircle2, iconColor: 'text-emerald-500' },
+  error: { icon: AlertTriangle, iconColor: 'text-red-500' },
+  warning: { icon: AlertCircle, iconColor: 'text-amber-500' },
+  info: { icon: Info, iconColor: 'text-slate-500' },
 };
 
 const DEFAULT_DURATION = { success: 3500, info: 3500, warning: 5000, error: 6000 };
@@ -58,9 +58,8 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               role={t.type === 'error' ? 'alert' : 'status'}
-              className="toast-enter pointer-events-auto relative overflow-hidden flex items-start gap-3 p-4 pl-5 rounded-2xl bg-white border border-slate-100 shadow-[0_8px_32px_rgba(15,23,42,0.14)]"
+              className="toast-enter pointer-events-auto flex items-start gap-3 p-4 rounded-2xl bg-white border border-slate-100 shadow-[0_8px_32px_rgba(15,23,42,0.14)]"
             >
-              <span className={`absolute left-0 top-0 bottom-0 w-1 ${v.bar}`} />
               <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${v.iconColor}`} />
               <div className="flex-1 min-w-0">
                 {t.title && <p className="text-sm font-semibold text-slate-900 mb-0.5">{t.title}</p>}

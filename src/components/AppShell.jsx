@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Calendar,
@@ -7,6 +7,7 @@ import {
   BarChart3,
   Users,
   FolderKanban,
+  MapPin,
   User,
   LogOut,
   Plus,
@@ -16,6 +17,10 @@ import {
 import { useAuth } from '../context/AuthContext';
 import ConfirmModal from './ui/ConfirmModal';
 import Logo from './ui/Logo';
+import BackButton from './ui/BackButton';
+import ThemeToggle from './ui/ThemeToggle';
+import Avatar from './ui/Avatar';
+import { LoadingSkeleton } from './ui/StateViews';
 
 export default function AppShell({ children }) {
   const { user, role, logout } = useAuth();
@@ -80,6 +85,12 @@ export default function AppShell({ children }) {
       icon: FolderKanban,
     };
 
+    const venuesItem = {
+      label: 'Venues',
+      path: '/admin/venues',
+      icon: MapPin,
+    };
+
     const profileItem = {
       label: 'Profile',
       path: '/profile',
@@ -93,6 +104,7 @@ export default function AppShell({ children }) {
         reportsItem,
         usersItem,
         allEventsItem,
+        venuesItem,
         profileItem,
       ];
     }
@@ -125,7 +137,7 @@ export default function AppShell({ children }) {
   const canCreateEvent = role === 'organizer' || role === 'admin';
 
   return (
-    <div className="min-h-screen bg-[#F5F7F9] text-slate-900 flex flex-col antialiased">
+    <div className="min-h-screen bg-canvas text-slate-900 flex flex-col antialiased">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[110] focus:px-4 focus:py-2 focus:rounded-xl focus:bg-slate-900 focus:text-white focus:text-sm focus:font-semibold"
@@ -240,11 +252,13 @@ export default function AppShell({ children }) {
                 className="group relative w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold transition-colors"
                 title={`${user?.name || 'User'} (${role})`}
               >
-                {user?.name ? user.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+                <Avatar user={user} className="w-full h-full rounded-xl" />
                 <div className="absolute left-full ml-3 px-2.5 py-1 bg-slate-900 text-white text-xs font-semibold rounded-lg shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
                   {user?.name || 'User'} ({role})
                 </div>
               </NavLink>
+
+              <ThemeToggle />
 
               <button
                 type="button"
@@ -266,9 +280,7 @@ export default function AppShell({ children }) {
                 className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-80 transition-opacity"
                 title="Profile"
               >
-                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-semibold shrink-0">
-                  {user?.name ? user.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
-                </div>
+                <Avatar user={user} className="w-8 h-8 rounded-full shrink-0" />
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs font-semibold text-slate-900 truncate">
                     {user?.name || 'Guest'}
@@ -278,10 +290,11 @@ export default function AppShell({ children }) {
                   </span>
                 </div>
               </NavLink>
+              <ThemeToggle className="ml-1" />
               <button
                 type="button"
                 onClick={() => setShowLogoutModal(true)}
-                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors ml-1"
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors "
                 title="Sign Out"
                 aria-label="Sign out"
               >
@@ -299,6 +312,7 @@ export default function AppShell({ children }) {
           <span className="text-base font-bold tracking-tight text-slate-900">OrgaVents</span>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           {canCreateEvent && (
             <NavLink
               to="/events/new"
@@ -312,7 +326,7 @@ export default function AppShell({ children }) {
             to="/profile"
             className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-xs font-semibold"
           >
-            {user?.name ? user.name.charAt(0).toUpperCase() : <User className="w-3.5 h-3.5" />}
+            <Avatar user={user} className="w-full h-full rounded-full" />
           </NavLink>
         </div>
       </header>
@@ -321,11 +335,22 @@ export default function AppShell({ children }) {
       <main
         id="main-content"
         tabIndex={-1}
-        className={`flex-1 w-full outline-none transition-all duration-300 ease-in-out min-h-screen bg-[#F5F7F9] flex flex-col pb-20 md:pb-8 ${
+        className={`flex-1 w-full outline-none transition-all duration-300 ease-in-out min-h-screen bg-canvas flex flex-col pb-20 md:pb-8 ${
           isCollapsed ? 'md:pl-20' : 'md:pl-64'
         }`}
       >
-        {children}
+        <BackButton />
+        {/* A page whose code is still downloading shows a placeholder here, inside the shell,
+            so the sidebar and header never disappear */}
+        <Suspense
+          fallback={
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+              <LoadingSkeleton variant="card" count={2} />
+            </div>
+          }
+        >
+          {children}
+        </Suspense>
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR (< md) */}

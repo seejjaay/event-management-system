@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { User, Eye, EyeOff, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { User, Eye, EyeOff, Loader2, Camera } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../services/api';
 import { InlineBanner, LoadingSkeleton } from '../components/ui/StateViews';
 import { useToast } from '../components/ui/Toast';
 import PasswordChecklist from '../components/ui/PasswordChecklist';
+import Avatar from '../components/ui/Avatar';
+import { fileToAvatarDataUrl, AVATAR_ACCEPT } from '../utils/image';
 import { checkName, checkEmail, checkPassword, collapseSpaces, normalizeEmail, LIMITS } from '../utils/validators';
 
 export default function ProfilePage() {
@@ -27,6 +29,8 @@ export default function ProfilePage() {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [profileErrorMessage, setProfileErrorMessage] = useState('');
   const [passwordErrorMessage, setPasswordErrorMessage] = useState('');
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
 
   useEffect(() => {
     if (user) {
@@ -34,6 +38,36 @@ export default function ProfilePage() {
       setEmail(user.email || '');
     }
   }, [user]);
+
+  const handlePhotoPicked = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // lets the same file be picked again later
+    if (!file) return;
+    setIsSavingPhoto(true);
+    try {
+      const image = await fileToAvatarDataUrl(file);
+      await authAPI.setAvatar(user._id, image);
+      await refreshUser();
+      toast.success('Your profile picture was updated.', { title: 'Changes saved' });
+    } catch (err) {
+      toast.error(err.errors?.image || err.message || 'Failed to update your profile picture.');
+    } finally {
+      setIsSavingPhoto(false);
+    }
+  };
+
+  const handlePhotoRemove = async () => {
+    setIsSavingPhoto(true);
+    try {
+      await authAPI.removeAvatar(user._id);
+      await refreshUser();
+      toast.success('Your profile picture was removed.', { title: 'Changes saved' });
+    } catch (err) {
+      toast.error(err.message || 'Failed to remove your profile picture.');
+    } finally {
+      setIsSavingPhoto(false);
+    }
+  };
 
   const isProfileDirty =
     !user || collapseSpaces(name) !== (user.name || '') || normalizeEmail(email) !== (user.email || '').toLowerCase();
@@ -127,8 +161,17 @@ export default function ProfilePage() {
     <div className="w-full flex-1 flex flex-col p-4 sm:p-6 lg:p-8 space-y-8 max-w-3xl mx-auto">
       {/* Top Header: Avatar + Name + Role Badge */}
       <div className="flex flex-col items-center text-center">
-        <div className="w-20 h-20 rounded-full bg-slate-900 text-white flex items-center justify-center text-2xl font-bold shadow-sm mb-3">
-          {user.name ? user.name.charAt(0).toUpperCase() : <User className="w-8 h-8" />}
+        <div className="relative mb-3">
+          <Avatar
+            user={user}
+            className="w-24 h-24 rounded-full shadow-sm"
+            textClass="text-3xl"
+          />
+          {isSavingPhoto && (
+            <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-white-fixed animate-spin" />
+            </div>
+          )}
         </div>
         <h1 className="text-xl font-bold tracking-tight text-slate-900">
           {user.name}
@@ -137,6 +180,36 @@ export default function ProfilePage() {
         <span className="mt-2 px-3 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-slate-100 text-slate-700">
           {role}
         </span>
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept={AVATAR_ACCEPT}
+            onChange={handlePhotoPicked}
+            className="hidden"
+            aria-label="Choose a profile picture"
+          />
+          <button
+            type="button"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={isSavingPhoto}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors disabled:opacity-50"
+          >
+            <Camera className="w-3.5 h-3.5 text-slate-500" />
+            <span>{user.avatarUpdatedAt ? 'Change photo' : 'Add photo'}</span>
+          </button>
+          {user.avatarUpdatedAt && (
+            <button
+              type="button"
+              onClick={handlePhotoRemove}
+              disabled={isSavingPhoto}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              Remove
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Two clean side-by-side white cards */}

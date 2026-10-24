@@ -16,7 +16,7 @@ export default function Logo({ size = 40, className = '' }) {
       aria-label="OrgaVents"
       className={className}
     >
-      <rect width="48" height="48" rx="12" fill="#0f172a" />
+      <rect width="48" height="48" rx="12" fill="#0f172a" stroke="#334155" strokeWidth="1" />
       <circle cx="24" cy="26" r="11" stroke="#ffffff" strokeWidth="4" />
       <rect x="17" y="9" width="3.5" height="8" rx="1.75" fill="#ffffff" />
       <rect x="27.5" y="9" width="3.5" height="8" rx="1.75" fill="#ffffff" />

@@ -30,7 +30,7 @@ export default function ConfirmModal({
     >
       {/* Soft blur backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
         onClick={!isLoading ? onClose : undefined}
       />
 
@@ -90,7 +90,7 @@ export default function ConfirmModal({
             disabled={isLoading}
             className={`px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-1.5 transition-all shadow-sm ${
               isDestructive
-                ? 'bg-red-600 hover:bg-red-700 text-white'
+                ? 'bg-red-600 hover:bg-red-700 text-white-fixed'
                 : 'bg-slate-900 hover:bg-slate-800 text-white'
             }`}
           >

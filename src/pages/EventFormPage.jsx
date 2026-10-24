@@ -1,110 +1,182 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, MapPin, Users, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { Calendar, MapPin, Users, Loader2 } from 'lucide-react';
+import useGoBack from '../hooks/useGoBack';
 import { useAuth } from '../context/AuthContext';
-import { eventsAPI } from '../services/api';
-import { formatEventDate, formatEventTime } from '../utils/dateUtils';
+import { eventsAPI, venuesAPI } from '../services/api';
+import { formatEventDate, formatEventTimeRange } from '../utils/dateUtils';
 import { InlineBanner, LoadingSkeleton } from '../components/ui/StateViews';
 import { useToast } from '../components/ui/Toast';
+import ConfirmModal from '../components/ui/ConfirmModal';
 import {
   checkEventTitle,
-  checkVenue,
   checkDescription,
   checkEventDate,
+  checkEventEnd,
   checkCapacity,
   collapseSpaces,
   LIMITS,
 } from '../utils/validators';
 
+const HOUR_MS = 3600 * 1000;
+
+/** "2026-10-24T09:00" in local time, as <input type="datetime-local"> expects */
+const toLocalInput = (value) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
+const inputClass =
+  'w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900';
+
 export default function EventFormPage() {
   const { id } = useParams();
   const isEditMode = Boolean(id);
-  const navigate = useNavigate();
+  const { goBack } = useGoBack();
   const { user } = useAuth();
   const toast = useToast();
 
   // Form Fields
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
-  const [venue, setVenue] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [venueId, setVenueId] = useState('');
   const [capacity, setCapacity] = useState(40);
   const [description, setDescription] = useState('');
 
+  const [venues, setVenues] = useState([]);
   const [initialEvent, setInitialEvent] = useState(null);
   const [baseline, setBaseline] = useState(null); // field values as loaded, for edit-mode dirty check
   const [fieldErrors, setFieldErrors] = useState({});
   const [generalError, setGeneralError] = useState('');
-  const [isLoading, setIsLoading] = useState(isEditMode);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [overlapConflict, setOverlapConflict] = useState(null); // the organizer's own overlapping event, awaiting a yes/no
 
   useEffect(() => {
-    if (isEditMode) {
-      const fetchEvent = async () => {
-        try {
-          setIsLoading(true);
-          const data = await eventsAPI.getById(id);
-          let localISOTime = '';
-          if (data.date) {
-            const d = new Date(data.date);
-            const offset = d.getTimezoneOffset() * 60000;
-            localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
-          }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setIsLoading(true);
+        const [venueList, data] = await Promise.all([
+          venuesAPI.getAll(),
+          isEditMode ? eventsAPI.getById(id) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setVenues(venueList || []);
+
+        if (data) {
+          const start = new Date(data.date);
+          // events saved before end times existed: show start + the assumed default length
+          const end = data.endDate ? new Date(data.endDate) : new Date(start.getTime() + LIMITS.DEFAULT_EVENT_HOURS * HOUR_MS);
+          // Events saved before venues existed have no venueId: match them to a venue by name
+          const byName = (venueList || []).find(
+            (v) => v.name.toLowerCase() === String(data.venue || '').trim().toLowerCase()
+          );
+          const vid = data.venueId?._id || data.venueId || byName?._id || '';
 
           setInitialEvent(data);
           setTitle(data.title || '');
-          setVenue(data.venue || '');
+          setVenueId(vid);
           setCapacity(data.capacity || 40);
           setDescription(data.description || '');
-          setDate(localISOTime);
+          setDate(toLocalInput(start));
+          setEndDate(toLocalInput(end));
           setBaseline({
             title: data.title || '',
-            venue: data.venue || '',
+            venueId: vid,
             capacity: String(data.capacity || 40),
             description: data.description || '',
-            date: localISOTime,
+            date: toLocalInput(start),
+            endDate: toLocalInput(end),
           });
-        } catch (err) {
-          setGeneralError(err.message || 'Failed to load event details.');
-        } finally {
-          setIsLoading(false);
+        } else {
+          const start = new Date();
+          start.setDate(start.getDate() + 7);
+          start.setHours(9, 0, 0, 0);
+          setDate(toLocalInput(start));
+          setEndDate(toLocalInput(new Date(start.getTime() + LIMITS.DEFAULT_EVENT_HOURS * HOUR_MS)));
         }
-      };
-      fetchEvent();
-    } else {
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() + 7);
-      defaultDate.setHours(9, 0, 0, 0);
-      const offset = defaultDate.getTimezoneOffset() * 60000;
-      setDate(new Date(defaultDate.getTime() - offset).toISOString().slice(0, 16));
-    }
+      } catch (err) {
+        if (!cancelled) setGeneralError(err.message || 'Failed to load the form.');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, [id, isEditMode]);
+
+  // Bookable venues, plus the event's current venue if it has since been deactivated
+  const venueOptions = useMemo(() => {
+    if (venueId && initialEvent && !venues.some((v) => v._id === venueId)) {
+      return [...venues, { _id: venueId, name: `${initialEvent.venue} (no longer bookable)`, capacity: null }];
+    }
+    return venues;
+  }, [venues, venueId, initialEvent]);
+  const selectedVenue = venueOptions.find((v) => v._id === venueId) || null;
+
+  const clearError = (key) => {
+    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: null }));
+  };
+
+  // Moving the start keeps the event's length, so the end follows along
+  const handleStartChange = (value) => {
+    const oldStart = new Date(date).getTime();
+    const oldEnd = new Date(endDate).getTime();
+    const length = oldEnd > oldStart ? oldEnd - oldStart : LIMITS.DEFAULT_EVENT_HOURS * HOUR_MS;
+    setDate(value);
+    const newStart = new Date(value).getTime();
+    if (!Number.isNaN(newStart)) setEndDate(toLocalInput(new Date(newStart + length)));
+    clearError('date');
+    clearError('endDate');
+  };
 
   const isDirty =
     !isEditMode ||
     !baseline ||
     title !== baseline.title ||
-    venue !== baseline.venue ||
+    venueId !== baseline.venueId ||
     String(capacity) !== baseline.capacity ||
     description !== baseline.description ||
-    date !== baseline.date;
+    date !== baseline.date ||
+    endDate !== baseline.endDate;
+
+  const changedFields = !isEditMode || !baseline
+    ? []
+    : [
+        title !== baseline.title && 'title',
+        (date !== baseline.date || endDate !== baseline.endDate) && 'date & time',
+        String(capacity) !== baseline.capacity && 'capacity',
+        venueId !== baseline.venueId && 'venue',
+        description !== baseline.description && 'description',
+      ].filter(Boolean);
 
   const validateForm = () => {
     const errors = {};
 
     const titleErr = checkEventTitle(title);
-    const venueErr = checkVenue(venue);
     const descriptionErr = checkDescription(description);
     // Editing may keep an event's existing date, so only new events must be in the future
     const dateErr = checkEventDate(date, { requireFuture: !isEditMode });
+    const endErr = checkEventEnd(date, endDate);
     let capacityErr = checkCapacity(capacity);
     if (!capacityErr && isEditMode && initialEvent && parseInt(capacity, 10) < (initialEvent.registeredCount || 0)) {
       capacityErr = `Cannot reduce capacity below registered count (${initialEvent.registeredCount})`;
     }
+    if (!capacityErr && selectedVenue?.capacity && parseInt(capacity, 10) > selectedVenue.capacity) {
+      capacityErr = `${selectedVenue.name} seats at most ${selectedVenue.capacity}`;
+    }
 
     if (titleErr) errors.title = titleErr;
-    if (venueErr) errors.venue = venueErr;
+    if (!venueId) errors.venueId = 'Please choose a venue';
     if (descriptionErr) errors.description = descriptionErr;
     if (dateErr) errors.date = dateErr;
+    if (endErr) errors.endDate = endErr;
     if (capacityErr) errors.capacity = capacityErr;
 
     setFieldErrors(errors);
@@ -117,14 +189,33 @@ export default function EventFormPage() {
 
     if (!isDirty || !validateForm()) return;
 
+    // Editing a live event can affect people who already registered, so confirm first
+    if (isEditMode) {
+      setShowSaveConfirm(true);
+      return;
+    }
+    await doSave();
+  };
+
+  const clashMessage = (conflict) =>
+    `${conflict.venue} is booked for "${conflict.title}" on ${formatEventDate(conflict.date, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })}, ${formatEventTimeRange(conflict.date, conflict.endDate)}. Pick another time or venue.`;
+
+  const doSave = async (extra = {}) => {
     setIsSubmitting(true);
     try {
       const payload = {
         title: collapseSpaces(title),
-        venue: collapseSpaces(venue),
+        venueId,
+        venue: selectedVenue?.name, // only used by mock mode; the API takes the name from venueId
         description: description.trim(),
         capacity: parseInt(capacity, 10),
         date: new Date(date).toISOString(),
+        endDate: new Date(endDate).toISOString(),
+        ...extra,
       };
 
       if (isEditMode) {
@@ -135,9 +226,14 @@ export default function EventFormPage() {
         toast.success(`"${payload.title}" is now on the calendar.`, { title: 'Event added' });
       }
 
-      navigate('/organizer');
+      goBack('/organizer');
     } catch (err) {
-      if (err.status === 409) {
+      if (err.code === 'VENUE_CLASH' && err.conflict) {
+        setFieldErrors((prev) => ({ ...prev, venueId: clashMessage(err.conflict) }));
+        setGeneralError('That venue is already booked at that time.');
+      } else if (err.code === 'ORGANIZER_OVERLAP' && err.conflict) {
+        setOverlapConflict(err.conflict);
+      } else if (err.status === 409) {
         setGeneralError(err.message || 'Capacity conflict.');
         setFieldErrors((prev) => ({
           ...prev,
@@ -151,6 +247,7 @@ export default function EventFormPage() {
       }
     } finally {
       setIsSubmitting(false);
+      setShowSaveConfirm(false);
     }
   };
 
@@ -164,16 +261,9 @@ export default function EventFormPage() {
 
   return (
     <div className="w-full flex-1 flex flex-col p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl mx-auto">
-      {/* Top Header: Back link + Title */}
+      {/* Top Header: Title */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link
-            to="/organizer"
-            className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-sm"
-            aria-label="Back to dashboard"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
           <h1 className="text-xl font-bold tracking-tight text-slate-900">
             {isEditMode ? 'Edit Event' : 'Create Event'}
           </h1>
@@ -209,10 +299,10 @@ export default function EventFormPage() {
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
-                  if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: null }));
+                  clearError('title');
                 }}
                 placeholder="e.g. Intro to Web Development"
-                className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400"
+                className={`${inputClass} px-4 placeholder:text-slate-400`}
               />
               {fieldErrors.title && (
                 <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.title}</p>
@@ -222,21 +312,76 @@ export default function EventFormPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="event-form-2">
-                  Date & Time
+                  Starts
                 </label>
                 <input id="event-form-2"
                   type="datetime-local"
                   required
-                  min={isEditMode ? undefined : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                  min={isEditMode ? undefined : toLocalInput(new Date())}
                   value={date}
-                  onChange={(e) => {
-                    setDate(e.target.value);
-                    if (fieldErrors.date) setFieldErrors((prev) => ({ ...prev, date: null }));
-                  }}
-                  className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
+                  onChange={(e) => handleStartChange(e.target.value)}
+                  className={inputClass}
                 />
                 {fieldErrors.date && (
                   <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.date}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="event-form-end">
+                  Ends
+                </label>
+                <input id="event-form-end"
+                  type="datetime-local"
+                  required
+                  min={date || undefined}
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    clearError('endDate');
+                  }}
+                  className={inputClass}
+                />
+                {fieldErrors.endDate && (
+                  <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.endDate}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5" htmlFor="event-form-4">
+                  Venue
+                </label>
+                <select id="event-form-4"
+                  required
+                  value={venueId}
+                  onChange={(e) => {
+                    setVenueId(e.target.value);
+                    clearError('venueId');
+                    clearError('capacity');
+                  }}
+                  disabled={venueOptions.length === 0}
+                  className={`${inputClass} cursor-pointer disabled:opacity-60`}
+                >
+                  <option value="">{venueOptions.length === 0 ? 'No venues available' : 'Choose a venue…'}</option>
+                  {venueOptions.map((v) => (
+                    <option key={v._id} value={v._id}>
+                      {v.name}{v.capacity ? ` (seats ${v.capacity})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {venueOptions.length === 0 && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {user?.role === 'admin' ? (
+                      <>No venues yet. <Link to="/admin/venues" className="font-semibold underline">Add one</Link>.</>
+                    ) : (
+                      'Ask an admin to add the venues that can be booked.'
+                    )}
+                  </p>
+                )}
+                {fieldErrors.venueId && (
+                  <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.venueId}</p>
                 )}
               </div>
 
@@ -248,7 +393,7 @@ export default function EventFormPage() {
                   type="number"
                   inputMode="numeric"
                   min="1"
-                  max={LIMITS.CAPACITY_MAX}
+                  max={selectedVenue?.capacity || LIMITS.CAPACITY_MAX}
                   step="1"
                   required
                   value={capacity}
@@ -258,10 +403,15 @@ export default function EventFormPage() {
                   }}
                   onChange={(e) => {
                     setCapacity(e.target.value);
-                    if (fieldErrors.capacity) setFieldErrors((prev) => ({ ...prev, capacity: null }));
+                    clearError('capacity');
                   }}
-                  className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900"
+                  className={`${inputClass} px-4`}
                 />
+                {selectedVenue?.capacity && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {selectedVenue.name} seats up to {selectedVenue.capacity}.
+                  </p>
+                )}
                 {isEditMode && initialEvent && (
                   <p className="text-[11px] text-slate-500 mt-1">
                     Current registrations: <span className="font-semibold text-slate-800">{initialEvent.registeredCount || 0}</span> (Capacity cannot be set lower than {initialEvent.registeredCount || 0})
@@ -271,32 +421,6 @@ export default function EventFormPage() {
                   <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.capacity}</p>
                 )}
               </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="event-form-4">
-                  Venue
-                </label>
-                <span className={`text-[11px] ${venue.length > 200 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-                  {venue.length} / 200
-                </span>
-              </div>
-              <input id="event-form-4"
-                type="text"
-                required
-                maxLength={LIMITS.VENUE_MAX}
-                value={venue}
-                onChange={(e) => {
-                  setVenue(e.target.value);
-                  if (fieldErrors.venue) setFieldErrors((prev) => ({ ...prev, venue: null }));
-                }}
-                placeholder="e.g. CCS Lab 3"
-                className="w-full h-11 px-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400"
-              />
-              {fieldErrors.venue && (
-                <p role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.venue}</p>
-              )}
             </div>
 
             <div>
@@ -316,7 +440,7 @@ export default function EventFormPage() {
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value);
-                  if (fieldErrors.description) setFieldErrors((prev) => ({ ...prev, description: null }));
+                  clearError('description');
                 }}
                 placeholder="Detailed information about the event..."
                 className="w-full p-4 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900 transition-all text-slate-900 placeholder:text-slate-400 resize-y"
@@ -327,12 +451,13 @@ export default function EventFormPage() {
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">
-              <Link
-                to="/organizer"
+              <button
+                type="button"
+                onClick={() => goBack('/organizer')}
                 className="px-5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all"
               >
                 Cancel
-              </Link>
+              </button>
               <button
                 type="submit"
                 disabled={isSubmitting || !isDirty}
@@ -364,12 +489,12 @@ export default function EventFormPage() {
               <div className="flex items-center gap-2.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
-                  {date ? `${formatEventDate(date, { month: 'short', day: 'numeric', year: 'numeric' })} • ${formatEventTime(date)}` : 'Date & time not set'}
+                  {date ? `${formatEventDate(date, { month: 'short', day: 'numeric', year: 'numeric' })} • ${formatEventTimeRange(date, endDate)}` : 'Date & time not set'}
                 </span>
               </div>
               <div className="flex items-center gap-2.5">
                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>{venue.trim() || 'Venue not set'}</span>
+                <span>{selectedVenue?.name || 'Venue not set'}</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -388,6 +513,41 @@ export default function EventFormPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showSaveConfirm}
+        title="Save changes?"
+        message={`You're about to update "${initialEvent?.title || 'this event'}" (${changedFields.join(', ')}). Anyone already registered will see the new details. Are you sure?`}
+        confirmText="Yes, save changes"
+        cancelText="Keep editing"
+        isDestructive={false}
+        isLoading={isSubmitting}
+        onConfirm={() => doSave()}
+        onClose={() => setShowSaveConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(overlapConflict)}
+        title="You have another event at this time"
+        message={
+          overlapConflict
+            ? `You're already running "${overlapConflict.title}" on ${formatEventDate(overlapConflict.date, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+              })}, ${formatEventTimeRange(overlapConflict.date, overlapConflict.endDate)}. Save this one anyway?`
+            : ''
+        }
+        confirmText="Save anyway"
+        cancelText="Go back"
+        isDestructive={false}
+        isLoading={isSubmitting}
+        onConfirm={async () => {
+          setOverlapConflict(null);
+          await doSave({ allowOverlap: true });
+        }}
+        onClose={() => setOverlapConflict(null)}
+      />
     </div>
   );
 }

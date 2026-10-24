@@ -18,6 +18,7 @@ export default function errorHandler(err, req, res, next) {
   res.status(status).json({
     message,
     ...(err.code && typeof err.code === 'string' ? { code: err.code } : {}),
+    ...(err.conflict ? { conflict: err.conflict } : {}),   // the clashing event, for VENUE_CLASH / ORGANIZER_OVERLAP
     ...(Object.keys(errors).length ? { errors } : {}),
   });
 }

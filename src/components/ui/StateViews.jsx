@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   AlertCircle,
@@ -9,7 +9,27 @@ import {
   ArrowRight,
 } from 'lucide-react';
 
-export function LoadingSkeleton({ variant = 'card', count = 1 }) {
+/**
+ * Loading placeholder. It stays invisible (but keeps its space, so nothing jumps) for `delay` ms:
+ * most loads finish sooner, and a skeleton that flashes for 50-150ms reads as flicker.
+ * Slow loads still get the skeleton, faded in.
+ */
+export function LoadingSkeleton({ delay = 250, ...props }) {
+  const [visible, setVisible] = useState(delay <= 0);
+  useEffect(() => {
+    if (delay <= 0) return undefined;
+    const t = setTimeout(() => setVisible(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+
+  return (
+    <div className={visible ? 'skeleton-in' : 'invisible'} aria-busy="true" aria-label="Loading">
+      <SkeletonShapes {...props} />
+    </div>
+  );
+}
+
+function SkeletonShapes({ variant = 'card', count = 1 }) {
   const items = Array.from({ length: count });
 
   if (variant === 'profile') {

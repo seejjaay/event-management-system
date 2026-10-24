@@ -11,7 +11,8 @@
     "server": "node server/server.js",
     "server:dev": "nodemon server/server.js",
     "seed": "node server/scripts/seedAdmin.js",
-    "seed:demo": "node server/scripts/seedDemo.js"
+    "seed:demo": "node server/scripts/seedDemo.js",
+    "migrate:venues": "node server/scripts/migrateVenues.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

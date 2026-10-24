@@ -16,6 +16,9 @@ const USE_MOCK =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_USE_MOCK === 'true') ||
   false;
 
+/** True when the app runs on mockBackend.js; live-only screens use it to explain themselves. */
+export const isMockMode = USE_MOCK;
+
 const API_BASE_URL =
   (typeof import.meta !== 'undefined' &&
     (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL)) ||
@@ -87,6 +90,8 @@ export async function apiRequest(endpoint, options = {}) {
     const error = new Error(data.message || `Request failed with status ${response.status}`);
     error.status = response.status;
     error.errors = data.errors || {};
+    if (data.code) error.code = data.code;           // e.g. VENUE_CLASH / ORGANIZER_OVERLAP
+    if (data.conflict) error.conflict = data.conflict; // the event that clashes
     throw error;
   }
 
@@ -146,6 +151,76 @@ export const authAPI = {
           method: 'PUT',
           body: JSON.stringify(updates),
         }),
+
+  /**
+   * PUT /api/users/:userId/avatar   Body: { image: 'data:image/webp;base64,...' } (<=200KB)
+   * Returns: public user (with avatarUpdatedAt). Own account only. Live backend only.
+   */
+  setAvatar: (userId, image) =>
+    USE_MOCK
+      ? Promise.reject(mockUnsupported('Profile pictures'))
+      : apiRequest(`/users/${userId}/avatar`, {
+          method: 'PUT',
+          body: JSON.stringify({ image }),
+        }),
+
+  /** DELETE /api/users/:userId/avatar — Returns: public user */
+  removeAvatar: (userId) =>
+    USE_MOCK
+      ? Promise.reject(mockUnsupported('Profile pictures'))
+      : apiRequest(`/users/${userId}/avatar`, { method: 'DELETE' }),
+};
+
+/** Public URL of a user's profile picture (loads through <img>, no token). `version` busts the cache. */
+export const avatarUrl = (userId, version) =>
+  USE_MOCK || !userId || !version
+    ? null
+    : `${API_BASE_URL}/users/${userId}/avatar?v=${encodeURIComponent(new Date(version).getTime())}`;
+
+/** Features that only exist on the live backend reject with this in mock mode. */
+function mockUnsupported(feature) {
+  const error = new Error(`${feature} are not available in mock mode.`);
+  error.status = 501;
+  return error;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VENUES API
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const venuesAPI = {
+  /**
+   * GET /api/venues            → bookable (active) venues, for the event form
+   * GET /api/venues?all=1      → admin only: every venue with `eventCount`
+   * Venue: { _id, name, capacity|null, description, isActive, eventCount? }
+   * Mock mode: read-only list built from the venue names already on mock events.
+   */
+  getAll: async ({ all = false } = {}) => {
+    if (USE_MOCK) {
+      const events = await mock.mockGetEvents({});
+      const names = [...new Set(events.map((e) => e.venue).filter(Boolean))].sort();
+      return names.map((name) => ({ _id: name, name, capacity: null, description: '', isActive: true }));
+    }
+    return apiRequest(`/venues${all ? '?all=1' : ''}`);
+  },
+
+  /** POST /api/admin/venues  Body: { name, capacity?, description? } */
+  create: (venue) =>
+    USE_MOCK
+      ? Promise.reject(mockUnsupported('Venue management'))
+      : apiRequest('/admin/venues', { method: 'POST', body: JSON.stringify(venue) }),
+
+  /** PUT /api/admin/venues/:id  Body: any of { name, capacity, description, isActive } */
+  update: (id, updates) =>
+    USE_MOCK
+      ? Promise.reject(mockUnsupported('Venue management'))
+      : apiRequest(`/admin/venues/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
+
+  /** DELETE /api/admin/venues/:id — 409 while events use it */
+  delete: (id) =>
+    USE_MOCK
+      ? Promise.reject(mockUnsupported('Venue management'))
+      : apiRequest(`/admin/venues/${id}`, { method: 'DELETE' }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,9 +259,11 @@ export const eventsAPI = {
 
   /**
    * POST /api/events
-   * Body:    { title, description, date: ISO, venue, capacity: number }
+   * Body:    { title, description, date: ISO, endDate: ISO, venueId, capacity: number, allowOverlap? }
    * Returns: Event
    * Auth:    organizer | admin
+   * 409 + code VENUE_CLASH (blocked) / ORGANIZER_OVERLAP (retry with allowOverlap: true); error.conflict = the other event
+   * (Mock mode ignores venueId/endDate and uses the plain `venue` name.)
    */
   create: (eventData) =>
     USE_MOCK
@@ -198,9 +275,9 @@ export const eventsAPI = {
 
   /**
    * PUT /api/events/:id
-   * Body:    { title?, description?, date?, venue?, capacity? }
+   * Body:    { title?, description?, date?, endDate?, venueId?, capacity?, allowOverlap? }
    * Returns: Event
-   * Note:    409 if capacity < registeredCount (FR-EVT-09)
+   * Note:    409 if capacity < registeredCount (FR-EVT-09), or VENUE_CLASH / ORGANIZER_OVERLAP as on create
    */
   update: (id, eventData) =>
     USE_MOCK

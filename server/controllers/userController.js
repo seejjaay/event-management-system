@@ -24,6 +24,7 @@ const toPublicUser = (u) => ({
   role: u.role,
   isActive: u.isActive,
   createdAt: u.createdAt,
+  avatarUpdatedAt: u.avatarUpdatedAt ?? null, // only the timestamp; the image itself is served by GET /:userId/avatar
 });
 
 const signToken = (user) =>
@@ -272,6 +273,92 @@ export const updateRole = async (req, res, next) => {
     await user.save();
 
     res.status(200).json(toPublicUser(user));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Profile pictures
+// Stored on the user document (select:false), served with a long cache lifetime; the client
+// adds ?v=<avatarUpdatedAt> so a new upload gets a new URL.
+// ---------------------------------------------------------------------------
+const AVATAR_MAX_BYTES = 200 * 1024;
+const AVATAR_DATA_URL = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/]+={0,2})$/;
+
+/** The declared content type has to match the bytes, so a renamed file can't masquerade as an image. */
+const matchesImageSignature = (buf, type) => {
+  if (type === 'image/png') return buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (type === 'image/jpeg') return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  if (type === 'image/webp') return buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP';
+  return false;
+};
+
+// PUT /api/users/:userId/avatar               (own account)   body: { image: "data:image/webp;base64,..." }
+export const setAvatar = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    if (!isObjectId(userId)) throw httpError(404, 'User not found.');
+    if (!sameId(userId, req.user._id)) throw httpError(403, 'You can only change your own profile picture.');
+
+    const match = typeof req.body?.image === 'string' ? AVATAR_DATA_URL.exec(req.body.image) : null;
+    if (!match) throw httpError(400, 'Validation failed.', { image: 'Please upload a PNG, JPEG or WebP image.' });
+
+    const [, contentType, b64] = match;
+    const data = Buffer.from(b64, 'base64');
+    if (data.length > AVATAR_MAX_BYTES) {
+      throw httpError(400, 'Validation failed.', { image: 'Image is too large (max 200 KB after resizing).' });
+    }
+    if (!matchesImageSignature(data, contentType)) {
+      throw httpError(400, 'Validation failed.', { image: 'That file is not a valid image.' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { avatar: { data, contentType }, avatarUpdatedAt: new Date() } },
+      { new: true }
+    );
+    if (!user) throw httpError(404, 'User not found.');
+
+    res.status(200).json(toPublicUser(user));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// DELETE /api/users/:userId/avatar            (own account)
+export const removeAvatar = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    if (!isObjectId(userId)) throw httpError(404, 'User not found.');
+    if (!sameId(userId, req.user._id)) throw httpError(403, 'You can only change your own profile picture.');
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $unset: { avatar: 1 }, $set: { avatarUpdatedAt: null } },
+      { new: true }
+    );
+    if (!user) throw httpError(404, 'User not found.');
+
+    res.status(200).json(toPublicUser(user));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/users/:userId/avatar               (public: an <img> tag can't send the Bearer token)
+export const getAvatar = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    if (!isObjectId(userId)) throw httpError(404, 'Not found.');
+
+    const user = await User.findById(userId).select('+avatar');
+    if (!user?.avatar?.data) throw httpError(404, 'Not found.');
+
+    res.set('Content-Type', user.avatar.contentType);
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.status(200).send(user.avatar.data);
   } catch (err) {
     next(err);
   }

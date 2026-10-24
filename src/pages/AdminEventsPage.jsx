@@ -16,12 +16,14 @@ import { adminAPI, reportsAPI } from '../services/api';
 import {
   formatEventDate,
   formatEventTime,
+  formatEventTimeRange,
   isEventPast,
   isEventFull,
 } from '../utils/dateUtils';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
 import { useToast } from '../components/ui/Toast';
+import { matchesEventSearch } from '../utils/search';
 
 export default function AdminEventsPage() {
   const { user } = useAuth();
@@ -76,14 +78,7 @@ export default function AdminEventsPage() {
   const filteredEvents = useMemo(() => {
     return events.filter((evt) => {
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesTitle = evt.title?.toLowerCase().includes(q);
-        const matchesVenue = evt.venue?.toLowerCase().includes(q);
-        const matchesOrganizer = (evt.organizer?.name || '').toLowerCase().includes(q);
-        const matchesEmail = (evt.organizer?.email || '').toLowerCase().includes(q);
-        if (!matchesTitle && !matchesVenue && !matchesOrganizer && !matchesEmail) return false;
-      }
+      if (searchQuery.trim() && !matchesEventSearch(evt, searchQuery)) return false;
 
       // Organizer filter
       if (selectedOrganizer !== 'all') {
@@ -169,7 +164,7 @@ export default function AdminEventsPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by title, venue, or organizer..."
+            placeholder="Search by title, venue, organizer or date..."
  maxLength={100}
             className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
           />
@@ -286,7 +281,7 @@ export default function AdminEventsPage() {
                         {formatEventDate(evt.date, { month: 'short', day: 'numeric', year: 'numeric' })}
                       </div>
                       <div className="text-slate-400 mt-0.5 truncate text-[11px]">
-                        {formatEventTime(evt.date)} • {evt.venue}
+                        {formatEventTimeRange(evt.date, evt.endDate)} • {evt.venue}
                       </div>
                     </div>
 

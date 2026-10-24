@@ -24,6 +24,7 @@ import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/Stat
 import { useToast } from '../components/ui/Toast';
 import useDialog from '../hooks/useDialog';
 import PasswordChecklist from '../components/ui/PasswordChecklist';
+import Avatar from '../components/ui/Avatar';
 import { checkName, checkEmail, checkPassword, collapseSpaces, normalizeEmail, LIMITS } from '../utils/validators';
 
 export default function AdminUsersPage() {
@@ -380,7 +381,9 @@ export default function AdminUsersPage() {
                     }`}
                   >
                     {/* 1. Name & Email */}
-                    <div className="col-span-4 min-w-0 pr-3">
+                    <div className="col-span-4 min-w-0 pr-3 flex items-center gap-3">
+                      <Avatar user={u} className="w-9 h-9 rounded-full shrink-0" />
+                      <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-slate-900 truncate">
                           {u.name}
@@ -394,6 +397,7 @@ export default function AdminUsersPage() {
                       <span className="text-slate-400 truncate block mt-0.5">
                         {u.email}
                       </span>
+                      </div>
                     </div>
 
                     {/* 2. Inline Role Selector dropdown (PATCH /api/users/:id/role) */}
@@ -512,7 +516,7 @@ export default function AdminUsersPage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
           <div
-            className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setIsCreateModalOpen(false)}
           />
           <div className="relative w-full max-w-md bg-white rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(15,23,42,0.08)] p-6 z-10">
@@ -643,7 +647,7 @@ export default function AdminUsersPage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
           <div
-            className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setResetPasswordUser(null)}
           />
           <div className="relative w-full max-w-md bg-white rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(15,23,42,0.08)] p-6 z-10">

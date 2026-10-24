@@ -5,6 +5,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Event from '../models/Event.js';
+import Venue from '../models/Venue.js';
 import Registration from '../models/Registration.js';
 
 if (process.env.NODE_ENV === 'production') {
@@ -78,9 +79,18 @@ const eventSeeds = [
 
 const events = {};
 for (const { key, date, ...rest } of eventSeeds) {
+  const nameKey = rest.venue.toLowerCase();
+  const venue =
+    (await Venue.findOne({ nameKey })) || (await Venue.create({ name: rest.venue, nameKey }));
+  const start = new Date(date);
   events[key] =
     (await Event.findOne({ title: rest.title, organizer: rest.organizer })) ||
-    (await Event.create({ ...rest, date: new Date(date) }));
+    (await Event.create({
+      ...rest,
+      date: start,
+      endDate: new Date(start.getTime() + 2 * 3600 * 1000),
+      venueId: venue._id,
+    }));
 }
 
 // [member email, event key, checkedIn]

@@ -18,12 +18,14 @@ import {
   formatEventDateTime,
   formatEventDate,
   formatEventTime,
+  formatEventTimeRange,
   isEventPast,
   isEventFull,
 } from '../utils/dateUtils';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
 import { useToast } from '../components/ui/Toast';
+import { matchesEventSearch } from '../utils/search';
 
 export default function OrganizerDashboardPage() {
   const { user, role } = useAuth();
@@ -101,12 +103,7 @@ export default function OrganizerDashboardPage() {
       }
 
       // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const titleMatch = (evt.title || '').toLowerCase().includes(q);
-        const venueMatch = (evt.venue || '').toLowerCase().includes(q);
-        if (!titleMatch && !venueMatch) return false;
-      }
+      if (searchQuery.trim() && !matchesEventSearch(evt, searchQuery)) return false;
 
       return true;
     });
@@ -160,23 +157,23 @@ export default function OrganizerDashboardPage() {
       {/* Top Bento Row: 2 Cards (like DEVit) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {/* Left Hero Card: Indigo gradient */}
-        <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-indigo-900/40 shadow-sm flex flex-col justify-between min-h-[220px]">
+        <div className="bg-gradient-to-br from-[#312e81] via-[#1e1b4b] to-[#0f172a] text-white-fixed rounded-3xl p-6 sm:p-8 border border-[#312e81]/40 shadow-sm flex flex-col justify-between min-h-[220px]">
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-indigo-200">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#c7d2fe]">
               Total Registrations
             </span>
-            <div className="text-4xl sm:text-5xl font-extrabold tracking-tight mt-1 text-white">
+            <div className="text-4xl sm:text-5xl font-extrabold tracking-tight mt-1 text-white-fixed">
               {kpiMetrics.totalRsvps}
             </div>
           </div>
-          <div className="flex items-center gap-6 pt-4 border-t border-indigo-800/40 text-xs sm:text-sm text-indigo-200">
+          <div className="flex items-center gap-6 pt-4 border-t border-[#3730a3]/40 text-xs sm:text-sm text-[#c7d2fe]">
             <div>
               <span className="opacity-75">Hosted Events:</span>{' '}
-              <span className="font-bold text-white">{kpiMetrics.totalEvents}</span>
+              <span className="font-bold text-white-fixed">{kpiMetrics.totalEvents}</span>
             </div>
             <div>
               <span className="opacity-75">Seats Filled:</span>{' '}
-              <span className="font-bold text-white">{kpiMetrics.capacityPercent}%</span>
+              <span className="font-bold text-white-fixed">{kpiMetrics.capacityPercent}%</span>
             </div>
           </div>
         </div>
@@ -196,7 +193,7 @@ export default function OrganizerDashboardPage() {
                   {upcomingNextEvent.title}
                 </Link>
                 <p className="text-xs text-slate-500">
-                  {formatEventDate(upcomingNextEvent.date, { month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTime(upcomingNextEvent.date)} • {upcomingNextEvent.venue}
+                  {formatEventDate(upcomingNextEvent.date, { month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTimeRange(upcomingNextEvent.date, upcomingNextEvent.endDate)} • {upcomingNextEvent.venue}
                 </p>
 
                 {/* Registered / Capacity Progress Bar */}
@@ -275,7 +272,7 @@ export default function OrganizerDashboardPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search my events by title or venue..."
+              placeholder="Search my events by title, venue or date..."
  maxLength={100}
               className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
             />
@@ -349,7 +346,7 @@ export default function OrganizerDashboardPage() {
                         {evt.title}
                       </Link>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">
-                        {formatEventDate(evt.date, { month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTime(evt.date)} • {evt.venue}
+                        {formatEventDate(evt.date, { month: 'short', day: 'numeric', year: 'numeric' })} • {formatEventTimeRange(evt.date, evt.endDate)} • {evt.venue}
                       </p>
                     </div>
                   </div>

@@ -6,6 +6,7 @@ import { InlineBanner } from '../components/ui/StateViews';
 import Logo from '../components/ui/Logo';
 import { checkEmail, normalizeEmail, LIMITS } from '../utils/validators';
 import { resetMockDB } from '../services/mockBackend.js';
+import ThemeToggle from '../components/ui/ThemeToggle';
 
 // Detect mock mode
 const USE_MOCK =
@@ -119,7 +120,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F7F9] flex flex-col items-center justify-center p-4">
+    <div className="relative min-h-screen bg-canvas flex flex-col items-center justify-center p-4">
+      <ThemeToggle className="absolute top-4 right-4" />
       <div className="max-w-md w-full mx-auto bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
         {/* Brand Header */}
         <div className="flex flex-col items-center mb-6">

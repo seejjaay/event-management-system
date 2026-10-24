@@ -10,11 +10,14 @@ import {
   MapPin,
   User as UserIcon,
   Users,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { eventsAPI, registrationsAPI } from '../services/api';
-import { formatEventTime, getEventState, isEventPast, isEventFull } from '../utils/dateUtils';
+import { formatEventTime, formatEventTimeRange, getEventState, isEventPast, isEventFull } from '../utils/dateUtils';
 import { LoadingSkeleton, InlineBanner, EmptyState } from '../components/ui/StateViews';
+import JumpPicker from '../components/calendar/JumpPicker';
+import { matchesEventSearch } from '../utils/search';
 
 export default function EventCalendarPage() {
   const navigate = useNavigate();
@@ -29,6 +32,9 @@ export default function EventCalendarPage() {
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [allEvents, setAllEvents] = useState(null); // every event, loaded the first time a search is typed
+  const [isSearchLoading, setIsSearchLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'open' | 'full' | 'my' | 'past'
 
   const loadCalendarData = async () => {
@@ -60,13 +66,38 @@ export default function EventCalendarPage() {
     loadCalendarData();
   }, [currentDate.getFullYear(), currentDate.getMonth(), user?._id]);
 
-  const goToPrevMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  // Week view steps a week at a time; month and list views step a month
+  const shiftPeriod = (dir) => {
+    if (viewMode === 'week') {
+      const next = new Date(currentDate);
+      next.setDate(next.getDate() + dir * 7);
+      setCurrentDate(next);
+    } else {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + dir, 1));
+    }
+  };
+  const goToPrev = () => shiftPeriod(-1);
+  const goToNext = () => shiftPeriod(1);
+
+  const handleJump = (date) => {
+    setCurrentDate(date);
+    setShowPicker(false);
   };
 
-  const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  };
+  const isSearching = searchQuery.trim().length > 0;
+
+  // A search looks across every date, not just the month on screen
+  useEffect(() => {
+    if (!isSearching || allEvents) return;
+    setIsSearchLoading(true);
+    eventsAPI
+      .getAll({})
+      .then((data) => setAllEvents(data || []))
+      .catch((err) =>
+        setFeedbackNotice({ type: 'error', message: err.message || 'Failed to search events.' })
+      )
+      .finally(() => setIsSearchLoading(false));
+  }, [isSearching, allEvents]);
 
   const goToToday = () => {
     setCurrentDate(new Date());
@@ -85,18 +116,9 @@ export default function EventCalendarPage() {
 
   // Filtered Events
   const filteredEvents = useMemo(() => {
-    return events.filter((evt) => {
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesTitle = evt.title?.toLowerCase().includes(q);
-        const matchesVenue = evt.venue?.toLowerCase().includes(q);
-        const matchesOrgName = (evt.organizer?.name || '').toLowerCase().includes(q);
-        const matchesOrgEmail = (evt.organizer?.email || '').toLowerCase().includes(q);
-        if (!matchesTitle && !matchesVenue && !matchesOrgName && !matchesOrgEmail) {
-          return false;
-        }
-      }
+    const source = isSearching ? allEvents || events : events;
+    return source.filter((evt) => {
+      if (isSearching && !matchesEventSearch(evt, searchQuery)) return false;
 
       // Filter pills
       const isPast = isEventPast(evt.date);
@@ -122,7 +144,39 @@ export default function EventCalendarPage() {
 
       return true;
     });
-  }, [events, searchQuery, activeFilter, user, role, userRegistrationMap]);
+  }, [events, allEvents, isSearching, searchQuery, activeFilter, user, role, userRegistrationMap]);
+
+  // List view shows only the month on screen (the fetch window also holds the neighbouring months)
+  const listEvents = useMemo(() => {
+    if (isSearching) return filteredEvents;
+    const y = currentDate.getFullYear();
+    const m = currentDate.getMonth();
+    return filteredEvents.filter((evt) => {
+      const d = new Date(evt.date);
+      return d.getFullYear() === y && d.getMonth() === m;
+    });
+  }, [filteredEvents, isSearching, currentDate]);
+
+  // Search results grouped by month, oldest first
+  const resultGroups = useMemo(() => {
+    if (!isSearching) return [];
+    const groups = new Map();
+    [...filteredEvents]
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .forEach((evt) => {
+        const d = new Date(evt.date);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            label: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+            events: [],
+          });
+        }
+        groups.get(key).events.push(evt);
+      });
+    return [...groups.values()];
+  }, [filteredEvents, isSearching]);
 
   // Month days matrix
   const calendarDays = useMemo(() => {
@@ -180,10 +234,26 @@ export default function EventCalendarPage() {
     return days;
   }, [currentDate]);
 
-  const monthYearLabel = currentDate.toLocaleDateString(undefined, {
-    month: 'long',
-    year: 'numeric',
-  });
+  const monthYearLabel = useMemo(() => {
+    if (viewMode !== 'week') {
+      return currentDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+    const first = weekDays[0];
+    const last = weekDays[6];
+    const sameMonth = first.getMonth() === last.getMonth();
+    const sameYear = first.getFullYear() === last.getFullYear();
+    const start = first.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+    const end = last.toLocaleDateString(undefined, {
+      ...(sameMonth ? {} : { month: 'short' }),
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${start} – ${end}`;
+  }, [viewMode, currentDate, weekDays]);
 
   const getEventsForDate = (dateObj) => {
     const y = dateObj.getFullYear();
@@ -211,6 +281,57 @@ export default function EventCalendarPage() {
     navigate(`/events/${eventId}`);
   };
 
+  const renderListRow = (evt) => {
+        const isRegistered = userRegistrationMap.has(evt._id);
+        const regCount = evt.registeredCount || 0;
+        const cap = evt.capacity || 1;
+        const isFull = isEventFull(evt);
+        const isPast = isEventPast(evt.date);
+        const seatsLeft = Math.max(0, cap - regCount);
+
+        return (
+          <div
+            key={evt._id}
+            onClick={() => handleEventClick(evt._id)}
+            className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex flex-col items-center justify-center text-slate-800 shrink-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {new Date(evt.date).toLocaleDateString(undefined, { month: 'short' })}
+                </span>
+                <span className="text-base font-bold leading-none text-slate-900">
+                  {new Date(evt.date).getDate()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 truncate">
+                  {evt.title}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  {formatEventTimeRange(evt.date, evt.endDate)} • {evt.venue}
+                  {evt.organizer?.name ? ` • by ${evt.organizer.name}` : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+              {isRegistered && (
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  Registered
+                </span>
+              )}
+              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+                {regCount} / {cap} • {isFull ? 'Full' : `${seatsLeft} seats left`}
+              </span>
+              <span className="text-xs font-bold text-slate-900 hover:text-slate-700 inline-flex items-center gap-1 ml-1">
+                View Details →
+              </span>
+            </div>
+          </div>
+        );
+  };
+
   const myPillLabel = role === 'organizer' ? 'My Events' : 'My RSVPs';
 
   return (
@@ -234,19 +355,36 @@ export default function EventCalendarPage() {
           <div className="inline-flex items-center bg-white rounded-2xl border border-slate-100 shadow-sm p-1">
             <button
               type="button"
-              onClick={goToPrevMonth}
-              aria-label="Previous month"
+              onClick={goToPrev}
+              aria-label={viewMode === 'week' ? 'Previous week' : 'Previous month'}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-3 text-xs font-semibold text-slate-800 select-none min-w-[130px] text-center">
-              {monthYearLabel}
-            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPicker((v) => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={showPicker}
+                title="Jump to a month or date"
+                className="h-8 px-3 rounded-xl text-xs font-semibold text-slate-800 min-w-[130px] inline-flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-colors"
+              >
+                <span>{monthYearLabel}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+              {showPicker && (
+                <JumpPicker
+                  value={currentDate}
+                  onSelect={handleJump}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
+            </div>
             <button
               type="button"
-              onClick={goToNextMonth}
-              aria-label="Next month"
+              onClick={goToNext}
+              aria-label={viewMode === 'week' ? 'Next week' : 'Next month'}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
@@ -291,7 +429,7 @@ export default function EventCalendarPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search events by title, venue, or organizer..."
+            placeholder="Search title, venue, organizer or date…"
  maxLength={100}
             className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
           />
@@ -324,7 +462,32 @@ export default function EventCalendarPage() {
 
       {/* Main Calendar Viewport Card */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(15,23,42,0.04)] overflow-hidden flex flex-col">
-        {isLoading ? (
+        {isSearching && isSearchLoading && !allEvents ? (
+          <div className="p-8">
+            <LoadingSkeleton variant="calendar-month" />
+          </div>
+        ) : isSearching ? (
+          <div>
+            <div className="px-6 py-3.5 bg-slate-50/50 border-b border-slate-100 text-xs font-semibold text-slate-500">
+              {filteredEvents.length} {filteredEvents.length === 1 ? 'result' : 'results'} for “{searchQuery.trim()}” across all dates
+            </div>
+            {resultGroups.length === 0 ? (
+              <EmptyState
+                title="No events found"
+                description="Nothing matches that search. Try a month, a venue or an organizer."
+              />
+            ) : (
+              resultGroups.map((g) => (
+                <div key={g.key}>
+                  <div className="px-6 py-2 bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    {g.label}
+                  </div>
+                  <div className="divide-y divide-slate-100">{g.events.map(renderListRow)}</div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : isLoading ? (
           <div className="p-8">
             <LoadingSkeleton variant="calendar-month" />
           </div>
@@ -459,9 +622,9 @@ export default function EventCalendarPage() {
                           )}`}
                         >
                           <div className="flex items-center justify-between text-[10px] font-semibold">
-                            <span>{formatEventTime(evt.date)}</span>
+                            <span>{formatEventTimeRange(evt.date, evt.endDate)}</span>
                             {isRegistered && (
-                              <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[9px] font-bold">
+                              <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white-fixed text-[9px] font-bold">
                                 RSVP'd
                               </span>
                             )}
@@ -496,7 +659,7 @@ export default function EventCalendarPage() {
         ) : (
           /* List View */
           <div className="divide-y divide-slate-100">
-            {filteredEvents.length === 0 ? (
+            {listEvents.length === 0 ? (
               <EmptyState
                 title="No events scheduled"
                 description={
@@ -506,56 +669,7 @@ export default function EventCalendarPage() {
                 }
               />
             ) : (
-              filteredEvents.map((evt) => {
-                const isRegistered = userRegistrationMap.has(evt._id);
-                const regCount = evt.registeredCount || 0;
-                const cap = evt.capacity || 1;
-                const isFull = isEventFull(evt);
-                const isPast = isEventPast(evt.date);
-                const seatsLeft = Math.max(0, cap - regCount);
-
-                return (
-                  <div
-                    key={evt._id}
-                    onClick={() => handleEventClick(evt._id)}
-                    className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-100 flex flex-col items-center justify-center text-slate-800 shrink-0">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          {new Date(evt.date).toLocaleDateString(undefined, { month: 'short' })}
-                        </span>
-                        <span className="text-base font-bold leading-none text-slate-900">
-                          {new Date(evt.date).getDate()}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 truncate">
-                          {evt.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {formatEventTime(evt.date)} • {evt.venue}
-                          {evt.organizer?.name ? ` • by ${evt.organizer.name}` : ''}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                      {isRegistered && (
-                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          Registered
-                        </span>
-                      )}
-                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
-                        {regCount} / {cap} • {isFull ? 'Full' : `${seatsLeft} seats left`}
-                      </span>
-                      <span className="text-xs font-bold text-slate-900 hover:text-slate-700 inline-flex items-center gap-1 ml-1">
-                        View Details →
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
+              listEvents.map(renderListRow)
             )}
           </div>
         )}

@@ -18,10 +18,21 @@ const eventSchema = new mongoose.Schema(
       type: Date,
       required: [true, 'Event date is required'],
     },
+    // Optional so events created before venues existed still load; the API requires it on create
+    endDate: {
+      type: Date,
+      default: null,
+    },
+    // Denormalised name of the venue (kept in step when a venue is renamed) so display/search stay simple
     venue: {
       type: String,
       required: [true, 'Venue is required'],
       trim: true,
+    },
+    venueId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Venue',
+      default: null,
     },
     capacity: {
       type: Number,
@@ -46,5 +57,7 @@ const eventSchema = new mongoose.Schema(
 eventSchema.index({ date: 1 });
 // Index for organizer's own events dashboard
 eventSchema.index({ organizer: 1, date: 1 });
+// Venue clash lookups
+eventSchema.index({ venueId: 1, date: 1 });
 
 export default mongoose.model('Event', eventSchema);

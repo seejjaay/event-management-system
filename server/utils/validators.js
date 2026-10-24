@@ -19,6 +19,8 @@ export const LIMITS = {
   DESCRIPTION_MAX: 2000,
   CAPACITY_MAX: 10000,
   MAX_YEARS_AHEAD: 5,
+  EVENT_MAX_HOURS: 24,
+  DEFAULT_EVENT_HOURS: 2, // assumed length of events created before end times existed
 };
 
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24}$/;
@@ -119,5 +121,19 @@ export function checkEventDate(v, { requireFuture = false } = {}) {
   limit.setFullYear(limit.getFullYear() + LIMITS.MAX_YEARS_AHEAD);
   if (d > limit) return `Event date cannot be more than ${LIMITS.MAX_YEARS_AHEAD} years ahead`;
   if (d.getFullYear() < 2000) return 'Please enter a valid date and time';
+  return null;
+}
+
+/** `end` must come after `start` and the event can't run longer than EVENT_MAX_HOURS. */
+export function checkEventEnd(start, end) {
+  if (!end) return 'End time is required';
+  const e = new Date(end);
+  if (Number.isNaN(e.getTime())) return 'Please enter a valid end time';
+  const s = new Date(start);
+  if (Number.isNaN(s.getTime())) return null; // the start error is reported on its own field
+  if (e <= s) return 'End time must be after the start time';
+  if (e - s > LIMITS.EVENT_MAX_HOURS * 3600 * 1000) {
+    return `An event can't run longer than ${LIMITS.EVENT_MAX_HOURS} hours`;
+  }
   return null;
 }

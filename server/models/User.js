@@ -32,6 +32,20 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,        // ← FR-AUTH-06: deactivated users get 403 on login
     },
+    // Profile picture, stored as a small (<=200KB) image. select:false keeps the bytes out of
+    // every normal query (including the per-request auth lookup); only avatarUpdatedAt travels.
+    avatar: {
+      type: {
+        data: Buffer,
+        contentType: String,
+      },
+      select: false,
+      default: undefined,
+    },
+    avatarUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }      // ← adds createdAt, updatedAt automatically
 );

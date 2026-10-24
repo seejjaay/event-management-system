@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { Search, Calendar, MapPin, CheckCircle2, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { registrationsAPI } from '../services/api';
-import { formatEventTime, formatEventDate, isEventPast } from '../utils/dateUtils';
+import { formatEventTime, formatEventTimeRange, formatEventDate, isEventPast } from '../utils/dateUtils';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import { LoadingSkeleton, EmptyState, InlineBanner } from '../components/ui/StateViews';
+import { matchesEventSearch } from '../utils/search';
 
 export default function MyRegistrationsPage() {
   const { user } = useAuth();
@@ -79,13 +80,7 @@ export default function MyRegistrationsPage() {
       }
 
       // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const titleMatch = (event.title || '').toLowerCase().includes(q);
-        const venueMatch = (event.venue || '').toLowerCase().includes(q);
-        const orgMatch = (event.organizer?.name || '').toLowerCase().includes(q);
-        if (!titleMatch && !venueMatch && !orgMatch) return false;
-      }
+      if (searchQuery.trim() && !matchesEventSearch(event, searchQuery)) return false;
 
       return true;
     });
@@ -135,7 +130,7 @@ export default function MyRegistrationsPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search your registered events..."
+            placeholder="Search by event, venue, organizer or date..."
  maxLength={100}
             className="w-full h-11 pl-10 pr-4 rounded-2xl bg-white border border-slate-100 shadow-sm text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all"
           />
@@ -230,7 +225,7 @@ export default function MyRegistrationsPage() {
                       {event.title || 'Untitled Event'}
                     </Link>
                     <p className="text-xs text-slate-500 mt-0.5 truncate">
-                      {event.date ? formatEventTime(event.date) : ''}
+                      {event.date ? formatEventTimeRange(event.date, event.endDate) : ''}
                       {event.venue ? ` • ${event.venue}` : ''}
                       {event.organizer?.name ? ` • Organized by ${event.organizer.name}` : ''}
                     </p>
