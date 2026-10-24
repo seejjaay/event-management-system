@@ -14,6 +14,8 @@ import {
   AlertCircle,
   ToggleLeft,
   ToggleRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { adminAPI } from '../services/api';
@@ -47,6 +49,7 @@ export default function AdminUsersPage() {
   const [resetPasswordUser, setResetPasswordUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const [deletingUser, setDeletingUser] = useState(null);
@@ -203,6 +206,7 @@ export default function AdminUsersPage() {
     setResetPasswordUser(targetUser);
     setNewPassword('');
     setPasswordError('');
+    setShowNewPassword(false);
   };
 
   const handleResetPasswordSubmit = async (e) => {
@@ -371,7 +375,9 @@ export default function AdminUsersPage() {
                 return (
                   <div
                     key={u._id}
-                    className="px-6 py-4 grid grid-cols-12 items-center text-xs hover:bg-slate-50/50 transition-colors min-w-[700px]"
+                    className={`px-6 py-4 grid grid-cols-12 items-center text-xs transition-colors min-w-[700px] ${
+                      isSelf ? 'bg-slate-50/60' : 'hover:bg-slate-50/50'
+                    }`}
                   >
                     {/* 1. Name & Email */}
                     <div className="col-span-4 min-w-0 pr-3">
@@ -395,8 +401,9 @@ export default function AdminUsersPage() {
                       <select
                         value={u.role}
                         onChange={(e) => handleInlineRoleChange(u, e.target.value)}
-                        className="h-8 px-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 capitalize focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 cursor-pointer"
-                        title="Change user role"
+                        disabled={isSelf}
+                        className="h-8 px-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 capitalize focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={isSelf ? 'You can’t change your own role' : 'Change user role'}
                       >
                         <option value="member">Member</option>
                         <option value="organizer">Organizer</option>
@@ -409,12 +416,17 @@ export default function AdminUsersPage() {
                       <button
                         type="button"
                         onClick={() => handleToggleActive(u)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                        disabled={isSelf}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                           u.isActive !== false
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100'
-                            : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 enabled:hover:bg-emerald-100'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200 enabled:hover:bg-slate-200'
                         }`}
-                        title={u.isActive !== false ? 'Click to deactivate' : 'Click to activate'}
+                        title={
+                          isSelf
+                            ? 'You can’t deactivate your own account'
+                            : u.isActive !== false ? 'Click to deactivate' : 'Click to activate'
+                        }
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
@@ -435,8 +447,9 @@ export default function AdminUsersPage() {
                       <button
                         type="button"
                         onClick={() => openResetPasswordModal(u)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors"
-                        title="Reset user password"
+                        disabled={isSelf}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 enabled:hover:bg-slate-100 text-slate-700 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={isSelf ? 'Change your own password in Profile' : 'Reset user password'}
                       >
                         <KeyRound className="w-3.5 h-3.5 text-slate-500" />
                         <span>Reset</span>
@@ -445,8 +458,10 @@ export default function AdminUsersPage() {
                       <button
                         type="button"
                         onClick={() => setDeletingUser(u)}
-                        className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                        title="Delete User"
+                        disabled={isSelf}
+                        className="p-1.5 rounded-xl text-slate-400 enabled:hover:text-red-600 enabled:hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={isSelf ? 'You can’t delete your own account' : 'Delete User'}
+                        aria-label="Delete user"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -658,19 +673,29 @@ export default function AdminUsersPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1" htmlFor="admin-users-5">
                   New Password
                 </label>
-                <input id="admin-users-5"
-                  type="password"
-                  required
-                  value={newPassword}
-                  maxLength={LIMITS.PASSWORD_MAX_BYTES}
-                  autoComplete="new-password"
-                  onChange={(e) => {
-                    setNewPassword(e.target.value);
-                    setPasswordError('');
-                  }}
-                  placeholder="Strong password"
-                  className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900"
-                />
+                <div className="relative flex items-center">
+                  <input id="admin-users-5"
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    value={newPassword}
+                    maxLength={LIMITS.PASSWORD_MAX_BYTES}
+                    autoComplete="new-password"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setPasswordError('');
+                    }}
+                    placeholder="Strong password"
+                    className="w-full h-11 pl-3.5 pr-10 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:outline-none focus:border-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((s) => !s)}
+                    aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                    className="absolute right-1 text-slate-400 hover:text-slate-600 p-2.5"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {passwordError && (
                   <p role="alert" className="text-xs text-red-600 mt-1">{passwordError}</p>
                 )}
